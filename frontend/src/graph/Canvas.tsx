@@ -20,11 +20,13 @@ export function Canvas({ errored }: { errored: Set<Id> }) {
 
   // Re-fit whenever an element is added or removed, so the whole graph stays in view.
   // Zooming by hand between changes is left alone.
+  // A new initial node id means a different agent was loaded (import or reset).
   const count = nodes.length;
+  const agentId = draft.initialNodeId;
   useEffect(() => {
     const frame = requestAnimationFrame(() => void fitView(FIT_OPTIONS));
     return () => cancelAnimationFrame(frame);
-  }, [count, fitView]);
+  }, [count, agentId, fitView]);
 
   return (
     <ReactFlow<FlowNode>

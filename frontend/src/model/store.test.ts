@@ -167,6 +167,17 @@ describe('deleting', () => {
   });
 });
 
+describe('loadDraft', () => {
+  it('replaces the whole agent, clears the selection, and is persisted', () => {
+    addEdge(draft().initialNodeId); // selects the new edge
+    const replacement = { ...draft(), name: 'Imported', nodes: { only: { id: 'only', name: 'Only', taskMessage: 't', roleMessage: '', end: true } }, edges: {}, initialNodeId: 'only' };
+    actions().loadDraft(replacement);
+    expect(draft()).toEqual(replacement);
+    expect(useEditor.getState().selection).toBeNull();
+    expect(JSON.parse(localStorage.getItem('agent-composer:draft')!).state.draft.name).toBe('Imported');
+  });
+});
+
 describe('reset and persistence', () => {
   it('reset returns to a fresh Greeting-only agent', () => {
     addNode(addEdge(draft().initialNodeId));

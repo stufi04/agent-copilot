@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { actions, addEdge, addNode, draft } from '../test/helpers';
+import type { AgentDraft } from '../model/types';
 import { NODE_H, NODE_W, PILL_W, toFlow, type FlowNode } from './toFlow';
 
 const flow = (errored = new Set<string>()) => toFlow(draft(), null, errored);
@@ -109,3 +110,28 @@ describe('toFlow: layout', () => {
     }
   });
 });
+
+describe('toFlow: graphs that are not trees', () => {
+  // The editor only builds trees, but a saved agent can come from elsewhere (e.g. a loop
+  // made on another branch). Laying it out must not hang or crash the page.
+  it('lays out a loop back to the start without recursing forever', () => {
+    const d = draft();
+    const g = d.initialNodeId;
+    const looped: AgentDraft = {
+      ...d,
+      nodes: { ...d.nodes, c: { id: 'c', name: 'Confirm', taskMessage: '', roleMessage: '', end: false } },
+      edges: {
+        e1: { id: 'e1', sourceId: g, targetId: 'c', function: 'go', description: '', properties: [] },
+        e2: { id: 'e2', sourceId: 'c', targetId: g, function: 'again', description: '', properties: [] },
+        e3: { id: 'e3', sourceId: g, targetId: 'c', function: 'skip', description: '', properties: [] },
+      },
+    };
+    const { nodes, edges } = toFlow(looped, null, new Set());
+    const pos = (id: string) => nodes.find((n) => n.id === id)!.position;
+    expect(nodes).toHaveLength(5);
+    expect(pos('c').y).toBeGreaterThan(pos(g).y); // placed once, below the start, under its first edge
+    expect(pos('e2').y).toBeGreaterThan(pos('c').y);
+    expect(edges.map((e) => e.id)).toEqual(expect.arrayContaining(['e2->' + g, 'e3->c']));
+  });
+});
+

@@ -46,6 +46,7 @@ make ui-e2e-open  # the same tests in Playwright's interactive UI
 
 - The page opens with a single **Greeting** node. Click any node or edge to edit it in the side panel.
 - Hover a node and click **[+]** to add an edge. Hover a dangling edge and click **[+]** to add its target node.
+- **Import JSON** (next to Export) loads an agent file in the backend format, e.g. `backend/example_flow.json`, and replaces the graph with it. Files the editor can't represent are rejected with the reasons; anything dropped on the way in (e.g. `pre_actions`) is listed as a warning. For now only tree-shaped agents import: no loops or nodes reached by more than one edge.
 - The view zooms out to fit as the graph grows. Use the bottom-left controls to zoom manually.
 - Work is saved in the browser (localStorage). **Export JSON** downloads the agent in the `example_flow.json` format and is enabled once validation passes.
 - Run an exported agent by pointing `AGENT_FLOW` in `bot.py` at the file.

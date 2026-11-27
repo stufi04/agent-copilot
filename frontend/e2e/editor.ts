@@ -165,6 +165,18 @@ export class Editor {
     await expect(this.panel).not.toHaveClass(/is-open/);
   }
 
+  /** Import an agent file through the Import JSON button's file picker. */
+  async importFile(file: string | { name: string; json: unknown }) {
+    const chooser = this.page.waitForEvent('filechooser');
+    await this.page.getByRole('button', { name: 'Import JSON' }).click();
+    const picker = await chooser;
+    await picker.setFiles(
+      typeof file === 'string'
+        ? file
+        : { name: file.name, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file.json)) },
+    );
+  }
+
   /** Click Export JSON and return the parsed downloaded file. */
   async exportJson(): Promise<{ filename: string; json: unknown }> {
     const [download] = await Promise.all([
