@@ -13,6 +13,11 @@ import type { AgentDraft, Id, Selection } from '../model/types';
 // out along a spanning tree (model/graph.ts): each node sits under one incoming edge,
 // and any other edge into it is drawn as a dashed "link" connector instead.
 
+// SIZED: every element has a fixed size and says so in `measured`. React Flow rebuilds
+// its record of a node whenever it gets a new node object (every drag frame, every
+// layout change), and only keeps the node's measured connection points if `measured`
+// is set. Without it, the lines to that node vanish until the DOM is measured again,
+// which during a drag means they flicker or disappear entirely.
 export const NODE_W = 200;
 export const NODE_H = 64;
 export const PILL_W = 170;
@@ -62,6 +67,7 @@ export function toFlow(
       position: { x: 0, y: 0 },
       width: NODE_W,
       height: NODE_H,
+      measured: { width: NODE_W, height: NODE_H }, // see SIZED below
       // The start node is the root of everything, so it can't be dragged anywhere.
       draggable: n.id !== draft.initialNodeId,
       data: {
@@ -83,6 +89,7 @@ export function toFlow(
       position: { x: 0, y: 0 },
       width: PILL_W,
       height: PILL_H,
+      measured: { width: PILL_W, height: PILL_H }, // see SIZED below
       data: {
         label: e.function.trim() || 'unnamed_edge',
         dangling: !e.targetId,

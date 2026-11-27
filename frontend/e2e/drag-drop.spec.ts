@@ -57,6 +57,66 @@ test('dragging a node onto another node moves it there with its whole subtree', 
   expect(edgesOf(json as Exported, 'Offer Times')).toEqual(['select_time→Confirm']);
 });
 
+test('connector lines stay drawn and attached to the moving elements throughout a drag', async ({ page }) => {
+  const editor = new Editor(page);
+  const lines = page.locator('.react-flow__edge-path');
+  await editor.waitForCanvasToSettle();
+  const total = await lines.count();
+  expect(total).toBe(6);
+
+  const offer = editor.node('Offer Times');
+  const card = offer.locator('xpath=ancestor-or-self::*[contains(@class,"agent-node")][1]');
+
+  // Watch every animation frame for the whole drag: the bug was lines vanishing for
+  // frames at a time, which a check after each step can miss.
+  await page.evaluate(() => {
+    const w = window as unknown as { __minLines: number; __watching: boolean };
+    w.__minLines = Infinity;
+    w.__watching = true;
+    const tick = () => {
+      w.__minLines = Math.min(w.__minLines, document.querySelectorAll('.react-flow__edge-path').length);
+      if (w.__watching) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+
+  const from = (await card.boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 3);
+  await page.mouse.down();
+  const steps = 15;
+  for (let i = 1; i <= steps; i++) {
+    await page.mouse.move(from.x + from.width / 2 + i * 20, from.y + from.height / 3 - i * 8);
+    await page.evaluate(() => new Promise(requestAnimationFrame)); // let React Flow render the frame
+    expect(await lines.count(), `lines drawn at drag step ${i}`).toBe(total);
+
+    // Ends of the lines touch the dragged card: one arrives at its top edge, one leaves its bottom edge.
+    const box = (await card.boundingBox())!;
+    const ends = await page.locator('.react-flow__edge-path').evaluateAll((paths) =>
+      paths.map((p) => {
+        const path = p as SVGPathElement;
+        const ctm = path.getScreenCTM()!;
+        const at = (len: number) => new DOMPoint(path.getPointAtLength(len).x, path.getPointAtLength(len).y).matrixTransform(ctm);
+        const a = at(0);
+        const b = at(path.getTotalLength());
+        return { start: { x: a.x, y: a.y }, end: { x: b.x, y: b.y } };
+      }),
+    );
+    const centreX = box.x + box.width / 2;
+    const near = (p: { x: number; y: number }, x: number, y: number) => Math.abs(p.x - x) < 6 && Math.abs(p.y - y) < 12;
+    expect(ends.some((l) => near(l.end, centreX, box.y)), `a line arrives at the card's top at step ${i}`).toBe(true);
+    expect(ends.some((l) => near(l.start, centreX, box.y + box.height)), `a line leaves the card's bottom at step ${i}`).toBe(true);
+  }
+  await page.mouse.up();
+  await editor.waitForCanvasToSettle();
+  const fewest = await page.evaluate(() => {
+    const w = window as unknown as { __minLines: number; __watching: boolean };
+    w.__watching = false;
+    return w.__minLines;
+  });
+  expect(fewest, 'fewest lines on screen in any frame of the drag').toBe(total);
+  expect(await lines.count()).toBe(total);
+});
+
 test('dropping on empty canvas snaps back and changes nothing', async ({ page }) => {
   const editor = new Editor(page);
   const collect = editor.node('Collect Details');

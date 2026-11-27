@@ -188,3 +188,15 @@ describe('toFlow: drag & drop and non-tree graphs', () => {
   });
 });
 
+describe('toFlow: element sizes', () => {
+  // Regression: without `measured`, React Flow drops a node's connection points each time
+  // it gets a new node object, so the connector lines disappeared while dragging.
+  it('every element declares its fixed size as measured, so its lines stay drawn', () => {
+    buildTree();
+    for (const n of flow().nodes) {
+      expect(n.measured).toEqual({ width: n.width, height: n.height });
+      expect(n.width).toBe(n.type === 'agentNode' ? NODE_W : PILL_W);
+    }
+  });
+});
+
