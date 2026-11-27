@@ -54,7 +54,7 @@ jobs:
         with:
           working-directory: backend
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock # relative to working-directory
       - name: Install dependencies (from uv.lock)
         run: uv sync --locked
       - name: Run tests
