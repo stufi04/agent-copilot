@@ -4,7 +4,7 @@
 PROJECT := backend
 UI := frontend
 
-.PHONY: help install run clean ui-install ui ui-test ui-e2e ui-e2e-open
+.PHONY: help install run test clean ui-install ui ui-test ui-e2e ui-e2e-open
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -15,6 +15,9 @@ install: ## Create the venv and install dependencies (from uv.lock)
 
 run: ## Run the voice agent (then open http://localhost:7860/client)
 	uv run --directory $(PROJECT) python bot.py
+
+test: ## Run the backend tests (pytest)
+	uv run --directory $(PROJECT) pytest
 
 ui-install: ## Install the agent editor's npm dependencies (Node 22+)
 	npm --prefix $(UI) install
