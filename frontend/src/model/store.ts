@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { canMoveNode, nodesRemovedBy, spanningTree, type MoveCheck } from './graph';
 import type { AgentDraft, AgentEdge, AgentNode, EdgeProperty, Id, Selection } from './types';
 
 // Defaults mirror backend/agent_builder/schema.py and example_flow.json.
@@ -37,19 +38,13 @@ function nextName(prefix: string, taken: Iterable<string>): string {
   return `${prefix}_${n}`;
 }
 
-/** The node plus everything reachable below it through outgoing edges. */
-export function subtreeNodeIds(draft: AgentDraft, rootId: Id): Set<Id> {
-  const seen = new Set<Id>();
-  const stack = [rootId];
-  while (stack.length) {
-    const id = stack.pop()!;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    for (const e of Object.values(draft.edges)) {
-      if (e.sourceId === id && e.targetId) stack.push(e.targetId);
-    }
-  }
-  return seen;
+/** `name` if free, otherwise `${name}_2`, `${name}_3`, ... */
+function uniqueName(name: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  if (!used.has(name)) return name;
+  let n = 2;
+  while (used.has(`${name}_${n}`)) n++;
+  return `${name}_${n}`;
 }
 
 /** Remove the given nodes, their outgoing edges, and detach edges pointing at them. */
@@ -76,6 +71,10 @@ interface EditorState {
   addProperty: (edgeId: Id) => void;
   updateProperty: (edgeId: Id, propId: Id, patch: Partial<Omit<EdgeProperty, 'id'>>) => void;
   removeProperty: (edgeId: Id, propId: Id) => void;
+  /** Drag a node onto another node: it moves there with its whole subtree. */
+  moveNode: (nodeId: Id, newParentId: Id) => MoveCheck;
+  /** Drag an edge onto a node: the edge now leads there. */
+  repointEdge: (edgeId: Id, targetNodeId: Id) => void;
   deleteNode: (id: Id) => void;
   deleteEdge: (id: Id) => void;
   /** Replace the whole agent, e.g. with an imported one. */
@@ -164,18 +163,67 @@ export const useEditor = create<EditorState>()(
         removeProperty: (edgeId, propId) =>
           patchEdge(edgeId, (e) => ({ ...e, properties: e.properties.filter((p) => p.id !== propId) })),
 
+        moveNode: (nodeId, newParentId) => {
+          const d = get().draft;
+          const check = canMoveNode(d, nodeId, newParentId);
+          if (!check.ok) return check;
+
+          const siblingNames = (except?: Id) =>
+            Object.values(d.edges)
+              .filter((e) => e.sourceId === newParentId && e.id !== except)
+              .map((e) => e.function);
+
+          // The node moves along the edge it hangs from, so the subtree comes with it.
+          const parentEdgeId = spanningTree(d).parentEdge.get(nodeId);
+          if (parentEdgeId) {
+            const edge = d.edges[parentEdgeId];
+            if (edge.sourceId === newParentId) return check;
+            const moved: AgentEdge = {
+              ...edge,
+              sourceId: newParentId,
+              function: uniqueName(edge.function, siblingNames(edge.id)),
+            };
+            set({ draft: { ...d, edges: { ...d.edges, [edge.id]: moved } } });
+            return check;
+          }
+
+          // A disconnected node has no edge to bring: connect it with a new one,
+          // selected so the user can name and describe it.
+          const edge: AgentEdge = {
+            id: newId(),
+            sourceId: newParentId,
+            targetId: nodeId,
+            function: nextName('edge', siblingNames()),
+            description: '',
+            properties: [],
+          };
+          set({
+            draft: { ...d, edges: { ...d.edges, [edge.id]: edge } },
+            selection: { kind: 'edge', id: edge.id },
+          });
+          return check;
+        },
+
+        repointEdge: (edgeId, targetNodeId) => {
+          const d = get().draft;
+          const edge = d.edges[edgeId];
+          if (!edge || !d.nodes[targetNodeId] || edge.targetId === targetNodeId) return;
+          // Whatever the edge led to before may now be cut off from the start node;
+          // validation flags that until it's reconnected or deleted.
+          set({ draft: { ...d, edges: { ...d.edges, [edgeId]: { ...edge, targetId: targetNodeId } } } });
+        },
+
         deleteNode: (id) => {
           const d = get().draft;
           if (id === d.initialNodeId || !d.nodes[id]) return;
-          set({ draft: { ...d, ...removeNodes(d, subtreeNodeIds(d, id)) }, selection: null });
+          set({ draft: { ...d, ...removeNodes(d, nodesRemovedBy(d, { kind: 'node', id })) }, selection: null });
         },
 
         deleteEdge: (id) => {
           const d = get().draft;
-          const edge = d.edges[id];
-          if (!edge) return;
-          // The edge's target subtree would be unreachable without it, so it goes too.
-          const removed = edge.targetId ? removeNodes(d, subtreeNodeIds(d, edge.targetId)) : d;
+          if (!d.edges[id]) return;
+          // Nodes only this edge connected to the start node go with it.
+          const removed = removeNodes(d, nodesRemovedBy(d, { kind: 'edge', id }));
           const edges = { ...removed.edges };
           delete edges[id];
           set({ draft: { ...d, nodes: removed.nodes, edges }, selection: null });

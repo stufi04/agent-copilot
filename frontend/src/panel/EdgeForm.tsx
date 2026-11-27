@@ -1,4 +1,5 @@
-import { subtreeNodeIds, useEditor } from '../model/store';
+import { nodesRemovedBy } from '../model/graph';
+import { useEditor } from '../model/store';
 import type { AgentEdge, PropertyType } from '../model/types';
 import { issuesFor, type Issue } from '../model/validate';
 import { Field } from './Field';
@@ -11,7 +12,7 @@ export function EdgeForm({ edge, issues }: { edge: AgentEdge; issues: Issue[] })
   const { updateEdge, deleteEdge, addProperty, updateProperty, removeProperty, select } = useEditor.getState();
 
   const onDelete = () => {
-    const below = edge.targetId ? subtreeNodeIds(useEditor.getState().draft, edge.targetId).size : 0;
+    const below = nodesRemovedBy(useEditor.getState().draft, { kind: 'edge', id: edge.id }).size;
     const msg = below
       ? `Delete edge "${edge.function}" and the ${below} node(s) it leads to?`
       : `Delete edge "${edge.function}"?`;
@@ -33,6 +34,7 @@ export function EdgeForm({ edge, issues }: { edge: AgentEdge; issues: Issue[] })
           <span className="muted">no target yet. Hover the edge and click [+]</span>
         )}
       </div>
+      <p className="field__hint">Drag this edge onto any node to point it there.</p>
 
       <Field
         label="Function name"

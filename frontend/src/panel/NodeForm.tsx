@@ -1,4 +1,5 @@
-import { subtreeNodeIds, useEditor } from '../model/store';
+import { nodesRemovedBy } from '../model/graph';
+import { useEditor } from '../model/store';
 import type { AgentNode } from '../model/types';
 import { issuesFor, type Issue } from '../model/validate';
 import { Field } from './Field';
@@ -10,7 +11,7 @@ export function NodeForm({ node, issues }: { node: AgentNode; issues: Issue[] })
   const update = (patch: Partial<AgentNode>) => updateNode(node.id, patch);
 
   const onDelete = () => {
-    const below = subtreeNodeIds(useEditor.getState().draft, node.id).size - 1;
+    const below = nodesRemovedBy(useEditor.getState().draft, { kind: 'node', id: node.id }).size - 1;
     const msg = below
       ? `Delete "${node.name}" and the ${below} node(s) below it?`
       : `Delete "${node.name}"?`;
@@ -19,6 +20,11 @@ export function NodeForm({ node, issues }: { node: AgentNode; issues: Issue[] })
 
   return (
     <div className="form">
+      {issuesFor(issues, 'reachable').map((i) => (
+        <span key={i.message} className="field__issue field__issue--error banner">
+          {i.message}
+        </span>
+      ))}
       <Field label="Name" issues={issuesFor(issues, 'name')}>
         <input value={node.name} onChange={(e) => update({ name: e.target.value })} autoFocus />
       </Field>
@@ -55,6 +61,10 @@ export function NodeForm({ node, issues }: { node: AgentNode; issues: Issue[] })
           Ends the call after this step
         </span>
       </Field>
+
+      {!isInitial && (
+        <p className="field__hint">Drag this node onto another node to move it there, together with everything below it.</p>
+      )}
 
       <div className="form__footer">
         {isInitial ? (

@@ -46,6 +46,23 @@ export function addField(
   actions().updateProperty(edgeId, props[props.length - 1].id, { enumText: '', required: true, ...field });
 }
 
+/**
+ * A small fixture graph, built through store actions:
+ *
+ *   Greeting ─a→ A ─b→ B
+ *            └c→ C
+ */
+export function buildTree() {
+  const g = draft().initialNodeId;
+  const a = addEdge(g, { function: 'a' });
+  const A = addNode(a, { name: 'A' });
+  const b = addEdge(A, { function: 'b' });
+  const B = addNode(b, { name: 'B' });
+  const c = addEdge(g, { function: 'c' });
+  const C = addNode(c, { name: 'C' });
+  return { g, a, A, b, B, c, C };
+}
+
 /** Recreates backend/example_flow.json entirely through store actions, as a user would in the UI. */
 export function buildExampleFlow() {
   actions().updateAgent({ name: 'Prosper Scheduler' });

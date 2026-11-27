@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actions, addEdge, addNode, draft } from '../test/helpers';
+import { actions, addEdge, addNode, buildTree, draft } from '../test/helpers';
 import type { AgentDraft } from '../model/types';
 import { NODE_H, NODE_W, PILL_W, toFlow, type FlowNode } from './toFlow';
 
@@ -112,8 +112,8 @@ describe('toFlow: layout', () => {
 });
 
 describe('toFlow: graphs that are not trees', () => {
-  // The editor only builds trees, but a saved agent can come from elsewhere (e.g. a loop
-  // made on another branch). Laying it out must not hang or crash the page.
+  // A saved or imported agent may have loops and shared nodes that were never drawn
+  // through the editor. Laying it out must not hang or crash the page.
   it('lays out a loop back to the start without recursing forever', () => {
     const d = draft();
     const g = d.initialNodeId;
@@ -132,6 +132,59 @@ describe('toFlow: graphs that are not trees', () => {
     expect(pos('c').y).toBeGreaterThan(pos(g).y); // placed once, below the start, under its first edge
     expect(pos('e2').y).toBeGreaterThan(pos('c').y);
     expect(edges.map((e) => e.id)).toEqual(expect.arrayContaining(['e2->' + g, 'e3->c']));
+  });
+});
+
+describe('toFlow: drag & drop and non-tree graphs', () => {
+  it('the start node is not draggable; other nodes and pills are', () => {
+    const { g, a, A } = buildTree();
+    const { nodes } = flow();
+    expect(byId(nodes, g).draggable).toBe(false);
+    expect(byId(nodes, A).draggable).toBe(true);
+    expect(byId(nodes, a).draggable).toBeUndefined(); // React Flow default: draggable
+  });
+
+  it('a loop is drawn as a dashed link and does not move its target', () => {
+    const { g, B } = buildTree();
+    const before = flow().nodes;
+    const loop = addEdge(B, { function: 'loop' });
+    actions().repointEdge(loop, g);
+    const { nodes, edges } = flow();
+
+    const link = edges.find((e) => e.id === `${loop}->${g}`)!;
+    expect(link).toMatchObject({ className: 'link-edge', sourceHandle: 'link', targetHandle: 'link' });
+    expect(link.style).toMatchObject({ strokeDasharray: '6 4' });
+    expect(byId(nodes, g).position.y).toBe(byId(before, g).position.y); // start node still on top
+    expect(byId(nodes, loop).position.y).toBeGreaterThan(byId(nodes, B).position.y); // pill under its source
+  });
+
+  it('tree edges are drawn solid', () => {
+    const { a, A } = buildTree();
+    expect(flow().edges.find((e) => e.id === `${a}->${A}`)!.className).toBeUndefined();
+  });
+
+  it('a disconnected part is flagged and laid out to the right of the main tree', () => {
+    const { a, A, B, C, g } = buildTree();
+    actions().repointEdge(a, C);
+    const { nodes } = flow();
+
+    expect(byId(nodes, A).data).toMatchObject({ unreachable: true });
+    expect(byId(nodes, B).data).toMatchObject({ unreachable: true });
+    expect(byId(nodes, C).data).toMatchObject({ unreachable: false });
+    const mainRight = Math.max(
+      ...[g, C, a].map((id) => byId(nodes, id).position.x + byId(nodes, id).width!),
+    );
+    expect(byId(nodes, A).position.x).toBeGreaterThan(mainRight);
+    expect(byId(nodes, B).position.y).toBeGreaterThan(byId(nodes, A).position.y); // its own subtree kept
+  });
+
+  it('marks the node under a drag as a valid or invalid drop target', () => {
+    const { A, C } = buildTree();
+    const valid = toFlow(draft(), null, new Set(), { nodeId: C, state: 'valid' });
+    expect(byId(valid.nodes, C).data).toMatchObject({ drop: 'valid' });
+    expect(byId(valid.nodes, A).data).toMatchObject({ drop: null });
+    const invalid = toFlow(draft(), null, new Set(), { nodeId: C, state: 'invalid' });
+    expect(byId(invalid.nodes, C).data).toMatchObject({ drop: 'invalid' });
   });
 });
 

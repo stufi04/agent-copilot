@@ -165,6 +165,30 @@ export class Editor {
     await expect(this.panel).not.toHaveClass(/is-open/);
   }
 
+  /**
+   * Drag one canvas element onto another with a real mouse: press on the source,
+   * move in small steps to the target's centre, release. `during` runs while the
+   * button is still held, to check what the drag looks like mid-flight.
+   */
+  async drag(source: Locator, target: Locator | { x: number; y: number }, during?: () => Promise<void>) {
+    await this.page.mouse.move(5, 5);
+    await this.waitForCanvasToSettle();
+    const from = (await source.boundingBox())!;
+    const to = 'boundingBox' in target ? await this.centre(target) : target;
+    await this.page.mouse.move(from.x + from.width / 2, from.y + from.height / 3);
+    await this.page.mouse.down();
+    await this.page.mouse.move(to.x, to.y, { steps: 20 });
+    if (during) await during();
+    await this.page.mouse.up();
+    await this.waitForCanvasToSettle();
+  }
+
+  /** Centre of an element on screen. */
+  async centre(el: Locator) {
+    const b = (await el.boundingBox())!;
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  }
+
   /** Import an agent file through the Import JSON button's file picker. */
   async importFile(file: string | { name: string; json: unknown }) {
     const chooser = this.page.waitForEvent('filechooser');

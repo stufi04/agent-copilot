@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { actions, addEdge, addNode, draft, edgesFrom, nodeNamed } from '../test/helpers';
-import { subtreeNodeIds, useEditor } from './store';
+import { actions, addEdge, addNode, buildTree, draft, edgesFrom, nodeNamed } from '../test/helpers';
+import { useEditor } from './store';
 
 describe('initial state', () => {
   it('starts with a single Greeting node as the initial node', () => {
@@ -109,25 +109,85 @@ describe('updates', () => {
   });
 });
 
-describe('deleting', () => {
-  // Greeting -> a -> A -> b -> B
-  //          -> c -> C
-  function tree() {
-    const g = draft().initialNodeId;
-    const a = addEdge(g, { function: 'a' });
-    const A = addNode(a, { name: 'A' });
-    const b = addEdge(A, { function: 'b' });
-    const B = addNode(b, { name: 'B' });
-    const c = addEdge(g, { function: 'c' });
-    const C = addNode(c, { name: 'C' });
-    return { g, a, A, b, B, c, C };
-  }
+describe('moveNode', () => {
+  const tree = buildTree;
 
-  it('subtreeNodeIds returns the node and everything below it', () => {
-    const { g, A, B, C } = tree();
-    expect(subtreeNodeIds(draft(), A)).toEqual(new Set([A, B]));
-    expect(subtreeNodeIds(draft(), g)).toEqual(new Set([g, A, B, C]));
+  it('moves the edge the node hangs from, so its subtree follows', () => {
+    const { a, A, b, B, C } = tree();
+    expect(actions().moveNode(A, C)).toEqual({ ok: true });
+    expect(draft().edges[a]).toMatchObject({ sourceId: C, targetId: A });
+    expect(draft().edges[b]).toMatchObject({ sourceId: A, targetId: B }); // untouched
+    expect(Object.keys(draft().nodes)).toHaveLength(4);
   });
+
+  it('renames the edge if the new parent already has one with that name', () => {
+    const { a, A, C } = tree();
+    addEdge(C, { function: 'a' });
+    actions().moveNode(A, C);
+    expect(draft().edges[a].function).toBe('a_2');
+  });
+
+  it('refuses invalid moves and leaves the graph unchanged', () => {
+    const { g, A, B } = tree();
+    const before = draft();
+    expect(actions().moveNode(A, B)).toMatchObject({ ok: false });
+    expect(actions().moveNode(g, A)).toMatchObject({ ok: false });
+    expect(draft()).toBe(before);
+  });
+
+  it('is a no-op when dropped on its current parent', () => {
+    const { g, A } = tree();
+    const before = draft();
+    expect(actions().moveNode(A, g)).toEqual({ ok: true });
+    expect(draft()).toBe(before);
+  });
+
+  it('connects a disconnected node with a new, selected edge', () => {
+    const { a, A, C } = tree();
+    actions().repointEdge(a, C); // A is now cut off and has no incoming edge
+    actions().moveNode(A, C);
+    const [created] = edgesFrom(C).filter((e) => e.targetId === A);
+    expect(created).toMatchObject({ function: 'edge_1', description: '' });
+    expect(useEditor.getState().selection).toEqual({ kind: 'edge', id: created.id });
+  });
+});
+
+describe('repointEdge', () => {
+  const tree = buildTree;
+
+  it('points the edge at another node and cuts off the old target', () => {
+    const { a, A, C } = tree();
+    actions().repointEdge(a, C);
+    expect(draft().edges[a].targetId).toBe(C);
+    expect(draft().nodes[A]).toBeDefined(); // nothing is deleted, it's just disconnected
+  });
+
+  it('can loop back to the start node or to its own source', () => {
+    const { g, b, A } = tree();
+    actions().repointEdge(b, g);
+    expect(draft().edges[b].targetId).toBe(g);
+    actions().repointEdge(b, A);
+    expect(draft().edges[b].targetId).toBe(A);
+  });
+
+  it('fills a dangling edge', () => {
+    const { g, C } = tree();
+    const e = addEdge(g);
+    actions().repointEdge(e, C);
+    expect(draft().edges[e].targetId).toBe(C);
+  });
+
+  it('ignores unknown nodes and no-op repoints', () => {
+    const { a, A } = tree();
+    const before = draft();
+    actions().repointEdge(a, 'nope');
+    actions().repointEdge(a, A);
+    expect(draft()).toBe(before);
+  });
+});
+
+describe('deleting', () => {
+  const tree = buildTree;
 
   it('deleteNode removes the subtree and detaches the edge that led to it', () => {
     const { a, A, b, B, C } = tree();
@@ -156,6 +216,23 @@ describe('deleting', () => {
     expect(draft().edges[b]).toBeUndefined();
     expect(draft().edges[c]).toBeDefined();
     expect(draft().nodes[C]).toBeDefined();
+  });
+
+  it('deleting a node with a loop back to the start keeps the start', () => {
+    const { g, A, B, C } = tree();
+    actions().repointEdge(addEdge(B, { function: 'loop' }), g);
+    actions().deleteNode(A);
+    expect(Object.keys(draft().nodes).sort()).toEqual([g, C].sort());
+    expect(draft().nodes[B]).toBeUndefined();
+  });
+
+  it('a node shared with another branch survives its parent being deleted', () => {
+    const { A, B, C } = tree();
+    const shared = addEdge(C, { function: 'shared' });
+    actions().repointEdge(shared, B);
+    actions().deleteNode(A);
+    expect(draft().nodes[B]).toBeDefined();
+    expect(draft().edges[shared].targetId).toBe(B);
   });
 
   it('deleteEdge on a dangling edge only removes the edge', () => {
