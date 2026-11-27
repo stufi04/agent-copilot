@@ -168,38 +168,32 @@ describe('errors (the file is rejected)', () => {
   });
 });
 
-describe('errors: only tree-shaped agents', () => {
-  const tail = 'The editor currently supports tree-shaped agents only: every node except the start is reached by exactly one edge.';
-
-  it('rejects a loop back to the start node', () => {
+describe('graph shape', () => {
+  it('accepts loops, including back to the start, and nodes reached by several edges', () => {
     const data = agent();
-    data.nodes[1].edges = [{ function: 'again', description: 'Again.', target: 'start' }];
-    expect(errorsOf(data)).toEqual([
-      'The start node "start" has incoming edges ("again" from "done"). Loops back to the start aren\'t supported yet.',
-      tail,
+    delete data.nodes[1].end;
+    data.nodes[1].edges = [{ function: 'again', description: 'Again.', target: 'start', properties: {}, required: [] }];
+    (data.nodes[0].edges as unknown[]).push({ function: 'skip', description: 'Skip.', target: 'done', properties: {}, required: [] });
+    const { draft } = ok(importAgentData(data));
+    expect(Object.values(draft.edges).map((e) => [e.function, draft.nodes[e.targetId!].name])).toEqual([
+      ['go', 'done'],
+      ['skip', 'done'],
+      ['again', 'start'],
     ]);
-  });
-
-  it('rejects a node reached by two edges', () => {
-    const data = agent();
-    (data.nodes[0].edges as unknown[]).push({ function: 'skip', description: 'Skip.', target: 'done' });
-    expect(errorsOf(data)).toEqual([
-      'Node "done" is the target of 2 edges ("go" from "start", "skip" from "start"). Shared nodes and loops aren\'t supported yet.',
-      tail,
-    ]);
+    expect(exportAgent(draft)).toEqual(data);
   });
 
   it('rejects nodes not connected to the start, including detached cycles', () => {
     const data = agent();
     data.nodes.push({ name: 'island' });
-    expect(errorsOf(data)).toEqual(['Not connected to the start node: "island".', tail]);
+    expect(errorsOf(data)).toEqual(['Not connected to the start node: "island".']);
 
     const cycle = agent();
     cycle.nodes.push(
       { name: 'x', edges: [{ function: 'to_y', description: 'd', target: 'y' }] },
       { name: 'y', edges: [{ function: 'to_x', description: 'd', target: 'x' }] },
     );
-    expect(errorsOf(cycle)).toEqual(['Not connected to the start node: "x", "y".', tail]);
+    expect(errorsOf(cycle)).toEqual(['Not connected to the start node: "x", "y".']);
   });
 });
 

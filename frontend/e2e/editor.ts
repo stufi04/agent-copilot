@@ -183,6 +183,26 @@ export class Editor {
     await this.waitForCanvasToSettle();
   }
 
+  /**
+   * Press the [+] under `element` and drag it onto `target` instead of clicking:
+   * links to an existing node. `during` runs while the button is still held.
+   */
+  async plusDrag(element: Locator, target: Locator, during?: () => Promise<void>) {
+    await this.page.mouse.move(5, 5);
+    await this.waitForCanvasToSettle();
+    await element.hover();
+    const plus = element.locator('.plus-slot button');
+    await expect(plus).toBeVisible();
+    const from = await this.centre(plus);
+    const to = await this.centre(target);
+    await this.page.mouse.move(from.x, from.y);
+    await this.page.mouse.down();
+    await this.page.mouse.move(to.x, to.y, { steps: 20 });
+    if (during) await during();
+    await this.page.mouse.up();
+    await this.waitForCanvasToSettle();
+  }
+
   /** Centre of an element on screen. */
   async centre(el: Locator) {
     const b = (await el.boundingBox())!;

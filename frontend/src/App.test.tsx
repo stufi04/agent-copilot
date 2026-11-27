@@ -196,13 +196,13 @@ describe('App', () => {
     expect(graphNode('Greeting')).toBeInTheDocument();
   });
 
-  it('only nodes other than the start are draggable; edges are not', () => {
+  it('the start node is not draggable; other nodes and edges are', () => {
     buildTree();
     setup();
     const wrapper = (el: HTMLElement) => el.closest('.react-flow__node')!;
     expect(wrapper(graphNode('Greeting'))).not.toHaveClass('draggable');
     expect(wrapper(graphNode('A'))).toHaveClass('draggable');
-    expect(wrapper(graphPill('a'))).not.toHaveClass('draggable');
+    expect(wrapper(graphPill('a'))).toHaveClass('draggable');
   });
 
   describe('Import JSON', () => {

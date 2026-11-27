@@ -6,6 +6,7 @@ import { PlusButton } from './PlusButton';
 
 export const AgentNodeCard = memo(function AgentNodeCard({ id, data }: NodeProps<AgentFlowNode>) {
   const addEdge = useEditor((s) => s.addEdge);
+  const linkNodes = useEditor((s) => s.linkNodes);
   const classes = [
     'agent-node',
     data.selected && 'is-selected',
@@ -26,7 +27,9 @@ export const AgentNodeCard = memo(function AgentNodeCard({ id, data }: NodeProps
         {data.name}
       </div>
       <Handle type="source" position={Position.Bottom} isConnectable={false} className="hidden-handle" />
-      <PlusButton label="Add an edge" onClick={() => addEdge(id)} />
+      {/* Links back up the tree arrive on the right, so they curve around it instead of through it. */}
+      <Handle id="link" type="target" position={Position.Right} isConnectable={false} className="hidden-handle" />
+      <PlusButton label="Add an edge" onClick={() => addEdge(id)} onLink={(target) => linkNodes(id, target)} />
     </div>
   );
 });

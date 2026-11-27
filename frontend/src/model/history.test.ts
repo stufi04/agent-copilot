@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { actions, addEdge, addField, addNode, buildTree, draft, nodeNamed } from '../test/helpers';
+import { actions, addEdge, addField, addNode, buildTree, draft } from '../test/helpers';
 import { HISTORY_LIMIT, MERGE_MS, useEditor } from './store';
 
 const state = () => useEditor.getState();
@@ -72,7 +72,7 @@ describe('undo / redo', () => {
   it('a change that changes nothing is not a step', () => {
     const { g } = buildTree();
     const n = steps();
-    actions().moveNode(nodeNamed('A').id, g); // already there
+    actions().moveEdge(Object.values(draft().edges)[0].id, g); // already there
     actions().deleteNode(g); // the start node can't be deleted
     expect(steps()).toBe(n);
   });
@@ -91,15 +91,42 @@ describe('undo / redo', () => {
 });
 
 describe('what can be undone', () => {
-  it('moving a node with its subtree', () => {
-    const { A, B, C, a, g } = buildTree();
+  it('moving an edge with its subtree', () => {
+    const { B, C, a, g } = buildTree();
     const before = draft();
-    actions().moveNode(A, C);
+    actions().moveEdge(a, C);
     expect(draft().edges[a].sourceId).toBe(C);
     actions().undo();
     expect(draft()).toBe(before);
     expect(draft().edges[a].sourceId).toBe(g);
     expect(draft().nodes[B]).toBeDefined();
+  });
+
+  it('attaching a node to another edge, in one step', () => {
+    const { a, A, C } = buildTree();
+    const e = addEdge(C);
+    const before = draft();
+    actions().attachNodeToEdge(A, e);
+    actions().undo();
+    expect(draft()).toBe(before);
+    expect(draft().edges[a].targetId).toBe(A);
+  });
+
+  it('dropping a node onto a node, in one step', () => {
+    const { a, A, C } = buildTree();
+    const before = draft();
+    actions().attachNodeToNode(A, C);
+    actions().undo();
+    expect(draft()).toBe(before);
+    expect(draft().edges[a].targetId).toBe(A);
+  });
+
+  it('linking to an existing node from a [+]', () => {
+    const { g, B } = buildTree();
+    const before = draft();
+    actions().linkNodes(B, g);
+    actions().undo();
+    expect(draft()).toBe(before);
   });
 
   it('deleting a node brings back its whole subtree, and selects it', () => {

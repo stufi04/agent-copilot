@@ -1,5 +1,5 @@
 import { MarkerType, type Edge, type Node } from '@xyflow/react';
-import { spanningTree, type SpanningTree } from '../model/graph';
+import { depths, spanningTree, type SpanningTree } from '../model/graph';
 import type { AgentDraft, Id, Selection } from '../model/types';
 
 // Projects the domain model onto React Flow and lays it out top-down.
@@ -9,9 +9,10 @@ import type { AgentDraft, Id, Selection } from '../model/types';
 // and carry a [+], including while dangling (no target yet), which a React Flow
 // edge can't represent. The lines on screen are plain connectors: source -> pill -> target.
 //
-// The editor only builds trees: every node except the start hangs under exactly one
-// edge, and there are no loops (see model/graph.ts). The layout still walks a spanning
-// tree rather than trusting that, so a malformed saved draft can't hang the page.
+// The agent can have loops and nodes reached by several edges, so it's laid out along
+// a spanning tree (model/graph.ts): each node sits under one incoming edge. Any other
+// edge into it is a link: solid if it points further down the tree, dashed (and routed
+// around the right-hand side) if it points back up or sideways.
 
 // SIZED: every element has a fixed size and says so in `measured`. React Flow rebuilds
 // its record of a node whenever it gets a new node object (every drag frame, every
@@ -23,7 +24,7 @@ export const NODE_H = 64;
 export const PILL_W = 170;
 export const PILL_H = 34;
 
-/** Drop feedback while something is dragged over this node. */
+/** Drop feedback while something is dragged over this element. */
 export type DropState = 'valid' | 'invalid' | null;
 
 export type AgentNodeData = {
@@ -39,6 +40,7 @@ export type EdgePillData = {
   dangling: boolean;
   selected: boolean;
   hasError: boolean;
+  drop: DropState;
 };
 export type AgentFlowNode = Node<AgentNodeData, 'agentNode'>;
 export type EdgePillNode = Node<EdgePillData, 'edgePill'>;
@@ -53,9 +55,13 @@ export function toFlow(
   const isSelected = (kind: 'node' | 'edge', id: Id) =>
     selection?.kind === kind && selection.id === id;
   const tree = spanningTree(draft);
+  const depth = depths(draft, tree);
 
   const nodes: FlowNode[] = [];
   const edges: Edge[] = [];
+  /** A link that points back up the tree, or across at the same level (including a node to itself). */
+  const isBackLink = (edgeId: Id, sourceId: Id, targetId: Id) =>
+    tree.parentEdge.get(targetId) !== edgeId && (depth.get(targetId) ?? 0) <= (depth.get(sourceId) ?? 0);
 
   for (const n of Object.values(draft.nodes)) {
     nodes.push({
@@ -86,13 +92,12 @@ export function toFlow(
       width: PILL_W,
       height: PILL_H,
       measured: { width: PILL_W, height: PILL_H }, // see SIZED below
-      // An edge always stays with the node it comes out of; it moves when that node does.
-      draggable: false,
       data: {
         label: e.function.trim() || 'unnamed_edge',
         dangling: !e.targetId,
         selected: isSelected('edge', e.id),
         hasError: errored.has(e.id),
+        drop: drop?.nodeId === e.id ? drop.state : null,
       },
     });
     edges.push({ id: `${e.sourceId}->${e.id}`, source: e.sourceId, target: e.id });
@@ -102,6 +107,18 @@ export function toFlow(
         source: e.id,
         target: e.targetId,
         markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+        ...(isBackLink(e.id, e.sourceId, e.targetId)
+          ? {
+              // Between the right-hand sides, stepping out to the right so it goes around
+              // the tree rather than through it.
+              type: 'smoothstep',
+              pathOptions: { offset: 36, borderRadius: 12 },
+              sourceHandle: 'link',
+              targetHandle: 'link',
+              className: 'link-edge',
+              style: { strokeDasharray: '6 4', strokeWidth: 1.5 },
+            }
+          : {}),
       });
     }
   }

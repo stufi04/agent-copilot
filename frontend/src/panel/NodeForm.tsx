@@ -58,7 +58,7 @@ export function NodeForm({ node, issues }: { node: AgentNode; issues: Issue[] })
       </Field>
 
       {!isInitial && (
-        <p className="field__hint">Drag this node onto another node to move it there, together with everything below it.</p>
+        <p className="field__hint">Drag this node onto an empty edge, or onto another node (adding an edge), to move it there with everything below it. Drag from its [+] to an existing node to link to it.</p>
       )}
 
       <div className="form__footer">

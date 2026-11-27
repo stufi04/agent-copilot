@@ -34,6 +34,10 @@ export function EdgeForm({ edge, issues }: { edge: AgentEdge; issues: Issue[] })
           <span className="muted">no target yet. Hover the edge and click [+]</span>
         )}
       </div>
+      <p className="field__hint">
+        Drag this edge onto a node to move it there, with everything below it.
+        {!edge.targetId && ' Drag from its [+] to an existing node to point it there.'}
+      </p>
 
       <Field
         label="Function name"

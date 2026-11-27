@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actions, addEdge, addField, addNode, buildExampleFlow, draft } from '../test/helpers';
+import { actions, addEdge, addField, addNode, buildExampleFlow, draft, nodeNamed } from '../test/helpers';
 import { erroredIds, issuesFor, validate, type Issue } from './validate';
 
 const messages = (issues: Issue[], severity?: Issue['severity']) =>
@@ -115,6 +115,36 @@ describe('validate', () => {
     const issues = validate(draft());
     expect(messages(issues, 'error')).toEqual([]);
     expect(messages(issues, 'warning')).toEqual([expect.stringContaining('Ends the call, but has outgoing edges')]);
+  });
+});
+
+describe('validate: loops', () => {
+  const endIssues = () => validate(draft()).filter((i) => i.field === 'end');
+
+  it('a loop with a way out is valid', () => {
+    buildExampleFlow();
+    const offer = nodeNamed('offer_times');
+    actions().linkNodes(offer.id, nodeNamed('collect_details').id); // "none of these times work"
+    const retry = Object.values(draft().edges).find((e) => e.sourceId === offer.id && e.function === 'edge_1')!;
+    actions().updateEdge(retry.id, { function: 'start_over', description: 'The caller wants to change their details.' });
+    expect(validate(draft())).toEqual([]);
+  });
+
+  it('a loop that never reaches the end of the call is an error on every node in it', () => {
+    const g = draft().initialNodeId;
+    actions().updateNode(g, { taskMessage: 't' });
+    const a = addNode(addEdge(g, { function: 'go', description: 'd' }), { taskMessage: 't' });
+    actions().linkNodes(a, g);
+    actions().updateEdge(Object.values(draft().edges).find((e) => e.sourceId === a)!.id, { function: 'back', description: 'd' });
+
+    expect(endIssues()).toEqual([
+      expect.objectContaining({ target: { kind: 'node', id: g }, severity: 'error', message: expect.stringContaining('loops forever') }),
+      expect.objectContaining({ target: { kind: 'node', id: a }, severity: 'error', message: expect.stringContaining('loops forever') }),
+    ]);
+
+    // Give it a way out.
+    addNode(addEdge(a, { function: 'done', description: 'd' }), { taskMessage: 't', end: true });
+    expect(validate(draft())).toEqual([]);
   });
 });
 

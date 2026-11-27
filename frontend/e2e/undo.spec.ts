@@ -27,7 +27,7 @@ test('a drag-and-drop move is undone with ⌘Z and redone with ⇧⌘Z', async (
   await editor.waitForCanvasToSettle();
   const rowsBefore = { offer: (await offer.boundingBox())!.y, greeting: (await greeting.boundingBox())!.y };
 
-  await editor.drag(offer, greeting);
+  await editor.drag(editor.pill('record_details'), greeting);
   const collect = (await editor.node('Collect Details').boundingBox())!;
   expect((await offer.boundingBox())!.y).toBeCloseTo(collect.y, 0); // now a sibling of Collect Details
 
@@ -47,8 +47,8 @@ test('a move is undone with the Undo button', async ({ page }) => {
   const confirm = editor.node('Confirm');
   const offer = editor.node('Offer Times');
 
-  // Confirm (under Offer Times) moves up beside it, under Collect Details.
-  await editor.drag(confirm, editor.node('Collect Details'));
+  // select_time (with Confirm, under Offer Times) moves up beside it, under Collect Details.
+  await editor.drag(editor.pill('select_time'), editor.node('Collect Details'));
   expect((await confirm.boundingBox())!.y).toBeCloseTo((await offer.boundingBox())!.y, 0);
 
   await page.getByRole('button', { name: 'Undo' }).click();
@@ -79,7 +79,7 @@ test('several kinds of change unwind one by one, back to the imported agent', as
   await editor.addNodeUnder(editor.selectedPill()); // 2: add its node
   await editor.panel.getByRole('checkbox', { name: /Ends the call/ }).check(); // 3: toggle
   await page.keyboard.press('Escape');
-  await editor.drag(editor.node('Offer Times'), editor.node('Greeting')); // 4: move a subtree
+  await editor.drag(editor.pill('record_details'), editor.node('Greeting')); // 4: move a subtree
   await expect(page.locator('.agent-node')).toHaveCount(5);
   await expect(page.getByRole('button', { name: /error/ })).toBeVisible(); // the new node is unfinished
 

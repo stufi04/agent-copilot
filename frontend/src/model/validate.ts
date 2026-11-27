@@ -1,3 +1,4 @@
+import { reachableNodes } from './graph';
 import type { AgentDraft, Id } from './types';
 
 export type IssueTarget = { kind: 'node'; id: Id } | { kind: 'edge'; id: Id } | { kind: 'agent' };
@@ -28,6 +29,9 @@ export function validate(d: AgentDraft): Issue[] {
   const nodes = Object.values(d.nodes);
   const edges = Object.values(d.edges);
 
+  const reachable = reachableNodes(d);
+  const canFinish = nodesThatCanFinish(d);
+
   const nameCounts = new Map<string, number>();
   for (const n of nodes) nameCounts.set(n.name.trim(), (nameCounts.get(n.name.trim()) ?? 0) + 1);
 
@@ -45,6 +49,9 @@ export function validate(d: AgentDraft): Issue[] {
     // the call. Otherwise the conversation reaches it and has nowhere to go.
     if (!n.end && !outgoing.length)
       err(t, 'end', 'Every branch must end the call: tick "Ends the call", or add an edge to carry on.');
+    else if (!canFinish.has(n.id))
+      err(t, 'end', 'This part of the conversation loops forever: no path from here ends the call.');
+    if (!reachable.has(n.id)) err(t, 'reachable', 'Not connected to the start node.');
   }
 
   for (const e of edges) {
@@ -70,6 +77,34 @@ export function validate(d: AgentDraft): Issue[] {
   }
 
   return issues;
+}
+
+/**
+ * Nodes with some path to the end of the call: a node marked "Ends the call", or an
+ * unfinished part (a leaf or a dangling edge, which have errors of their own).
+ * Anything else is stuck in a loop.
+ */
+function nodesThatCanFinish(d: AgentDraft): Set<Id> {
+  const edges = Object.values(d.edges);
+  const done = new Set<Id>();
+  const queue: Id[] = [];
+  for (const n of Object.values(d.nodes)) {
+    const out = edges.filter((e) => e.sourceId === n.id);
+    if (n.end || !out.length || out.some((e) => !e.targetId)) {
+      done.add(n.id);
+      queue.push(n.id);
+    }
+  }
+  while (queue.length) {
+    const id = queue.shift()!;
+    for (const e of edges) {
+      if (e.targetId === id && !done.has(e.sourceId)) {
+        done.add(e.sourceId);
+        queue.push(e.sourceId);
+      }
+    }
+  }
+  return done;
 }
 
 /** Ids of nodes/edges with at least one blocking error, for highlighting on the graph. */

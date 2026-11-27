@@ -109,12 +109,14 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .agent-node.is-selected, .edge-pill.is-selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 /* ---- drag & drop ---- */
-.react-flow__node.draggable .agent-node { cursor: grab; }
+.react-flow__node.draggable .agent-node, .react-flow__node.draggable .edge-pill { cursor: grab; }
+.link-preview { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; fill: none; }
+.plus-button { touch-action: none; }
 .react-flow__node.is-dragging { opacity: 0.8; }
 .react-flow__node.is-dragging .agent-node, .react-flow__node.is-dragging .edge-pill { cursor: grabbing; box-shadow: 0 8px 20px rgb(0 0 0 / 0.15); }
 .react-flow__node.is-dragging .plus-slot { display: none; }
-.agent-node.drop-valid { border-color: var(--ok); box-shadow: 0 0 0 4px rgb(47 158 68 / 0.25); }
-.agent-node.drop-invalid { border-color: var(--error); box-shadow: 0 0 0 4px rgb(214 51 108 / 0.2); cursor: not-allowed; }
+.agent-node.drop-valid, .edge-pill.drop-valid { border-color: var(--ok); box-shadow: 0 0 0 4px rgb(47 158 68 / 0.25); }
+.agent-node.drop-invalid, .edge-pill.drop-invalid { border-color: var(--error); box-shadow: 0 0 0 4px rgb(214 51 108 / 0.2); cursor: not-allowed; }
 
 /* ---- [+] under a hovered element ---- */
 .plus-slot {
