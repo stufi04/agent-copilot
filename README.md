@@ -50,6 +50,26 @@ make ui-e2e-open  # the same tests in Playwright's interactive UI
 - Work is saved in the browser (localStorage). **Export JSON** downloads the agent in the `example_flow.json` format and is enabled once validation passes.
 - Run an exported agent by pointing `AGENT_FLOW` in `bot.py` at the file.
 
+## Tests & CI
+
+```bash
+make test         # backend: pytest (AgentBuilder, schema, the editor's exported JSON)
+make ui-test      # frontend: Vitest unit + component tests
+make ui-e2e       # frontend: Playwright end-to-end tests
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request and on pushes to `main`. A first job checks which parts changed, and each suite runs only when it's relevant:
+
+| Job | Runs when these change |
+| --- | --- |
+| Backend tests | `backend/**`, `frontend/e2e/fixtures/**` |
+| Frontend lint, type-check & unit tests | `frontend/**`, `backend/example_flow.json` |
+| Frontend end-to-end tests | `frontend/**`, `backend/example_flow.json` |
+
+The two cross-component paths are the shared contract: the frontend compares its export against `example_flow.json`, and the backend loads the editor's exported `new_agent.json`. Editing the workflow runs everything.
+
+A final **CI result** job always runs and fails if any suite failed. Branch protection on `main` requires only this check, so PRs that skip a suite can still merge.
+
 ## Layout
 
 | Path | Responsibility |
