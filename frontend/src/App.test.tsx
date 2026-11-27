@@ -152,6 +152,16 @@ describe('App', () => {
     expect(JSON.parse(await blob.text())).toMatchObject({ name: 'Prosper Scheduler', initial_node: 'greeting' });
   });
 
+  it('top bar: agent name and settings cog left, editor controls centre, actions right', () => {
+    setup();
+    const names = (el: Element) => within(el as HTMLElement).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
+    const [left, centre, right] = document.querySelector('.top-bar')!.children;
+    expect(names(left)).toEqual(['New agent', 'Agent settings']);
+    expect(centre).toBe(screen.getByRole('toolbar', { name: 'Editor controls' }));
+    expect(names(centre)).toEqual(['Undo', 'Redo', 'Reset']);
+    expect(names(right)).toEqual(['2 errors, 0 warnings', 'Import JSON', 'Export JSON']);
+  });
+
   it('Agent settings opens the agent form', async () => {
     const { user } = setup();
     await user.click(screen.getByRole('button', { name: 'Agent settings' }));

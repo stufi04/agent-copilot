@@ -46,12 +46,12 @@ export function UndoRedoButtons() {
 
   return (
     <div className="undo-redo" role="group" aria-label="History">
-      <button type="button" className="btn btn--icon" aria-label="Undo" title={`Undo (${MOD}Z)`} disabled={!canUndo} onClick={undo}>
+      <button type="button" className="btn btn--icon btn--ghost" aria-label="Undo" title={`Undo (${MOD}Z)`} disabled={!canUndo} onClick={undo}>
         <ArrowIcon />
       </button>
       <button
         type="button"
-        className="btn btn--icon"
+        className="btn btn--icon btn--ghost"
         aria-label="Redo"
         title={`Redo (${isMac ? '⇧⌘Z' : 'Ctrl+Y'})`}
         disabled={!canRedo}

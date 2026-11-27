@@ -27,11 +27,41 @@ export function TopBar({ issues }: { issues: Issue[] }) {
 
   return (
     <header className="top-bar">
-      <button type="button" className="top-bar__title" onClick={() => select({ kind: 'agent' })}>
-        {draft.name.trim() || 'Untitled agent'}
-      </button>
-      <div className="top-bar__actions">
+      <div className="top-bar__agent">
+        <span className="top-bar__brand">
+          <BrandIcon />
+          AgentEditor
+        </span>
+        <span className="top-bar__divider" aria-hidden="true" />
+        <button type="button" className="top-bar__title" onClick={() => select({ kind: 'agent' })}>
+          {draft.name.trim() || 'Untitled agent'}
+        </button>
+        <button
+          type="button"
+          className="btn btn--icon btn--ghost"
+          aria-label="Agent settings"
+          title="Agent settings"
+          onClick={() => select({ kind: 'agent' })}
+        >
+          <CogIcon />
+        </button>
+      </div>
+
+      <div className="top-bar__controls" role="toolbar" aria-label="Editor controls">
         <UndoRedoButtons />
+        <span className="top-bar__divider" aria-hidden="true" />
+        <button
+          type="button"
+          className="btn btn--icon btn--ghost"
+          aria-label="Reset"
+          title="Reset: discard this agent and start over"
+          onClick={() => window.confirm('Discard this agent and start over?') && reset()}
+        >
+          <TrashIcon />
+        </button>
+      </div>
+
+      <div className="top-bar__actions">
         <div className="problems">
           <button
             type="button"
@@ -62,9 +92,6 @@ export function TopBar({ issues }: { issues: Issue[] }) {
             </ul>
           )}
         </div>
-        <button type="button" className="btn" onClick={() => select({ kind: 'agent' })}>
-          Agent settings
-        </button>
         <ImportButton />
         <button
           type="button"
@@ -75,14 +102,39 @@ export function TopBar({ issues }: { issues: Issue[] }) {
         >
           Export JSON
         </button>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => window.confirm('Discard this agent and start over?') && reset()}
-        >
-          Reset
-        </button>
       </div>
     </header>
+  );
+}
+
+function CogIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4">
+      <circle cx="8" cy="8" r="2.2" />
+      <path
+        strokeLinejoin="round"
+        d="M6.9 1.5h2.2l.35 1.75 1.2.5 1.5-1 1.55 1.55-1 1.5.5 1.2 1.75.35v2.2l-1.75.35-.5 1.2 1 1.5-1.55 1.55-1.5-1-1.2.5-.35 1.75H6.9l-.35-1.75-1.2-.5-1.5 1-1.55-1.55 1-1.5-.5-1.2L1.05 9.1V6.9l1.75-.35.5-1.2-1-1.5L3.85 2.3l1.5 1 1.2-.5z"
+      />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5h6.6L12 4M6.75 6.5v4.5M9.25 6.5v4.5" />
+    </svg>
+  );
+}
+
+/** Three linked nodes: the app mark. */
+function BrandIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M10 5.5v3.5M10 9l-5 5M10 9l5 5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <rect x="6.5" y="1.5" width="7" height="5" rx="1.5" fill="currentColor" />
+      <rect x="1.5" y="13" width="7" height="5" rx="1.5" fill="currentColor" opacity="0.7" />
+      <rect x="11.5" y="13" width="7" height="5" rx="1.5" fill="currentColor" opacity="0.7" />
+    </svg>
   );
 }
