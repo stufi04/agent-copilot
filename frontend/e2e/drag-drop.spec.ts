@@ -49,8 +49,15 @@ test('dragging a node onto another node moves it there with its whole subtree', 
   expect(c.y).toBeGreaterThan(o.y);
   await expect(greeting).not.toHaveClass(/drop-/);
 
-  // Collect Details now has no edges: a warning, not an error, so it still exports.
-  await expect(page.getByRole('button', { name: '0 errors, 1 warning' })).toBeVisible();
+  // Collect Details now has no edges, so it must end the call before the agent exports.
+  const collect = editor.node('Collect Details');
+  await expect(page.getByRole('button', { name: '1 error, 0 warnings' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Export JSON' })).toBeDisabled();
+  await collect.click();
+  await expect(editor.panel.getByText(/Every branch must end the call/)).toBeVisible();
+  await editor.panel.getByRole('checkbox', { name: /Ends the call/ }).check();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: '✓ Valid' })).toBeVisible();
   const { json } = await editor.exportJson();
   expect(edgesOf(json as Exported, 'Greeting')).toEqual(['choose_intent→Collect Details', 'record_details→Offer Times']);
   expect(edgesOf(json as Exported, 'Collect Details')).toEqual([]);

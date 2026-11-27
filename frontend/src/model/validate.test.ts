@@ -6,12 +6,36 @@ const messages = (issues: Issue[], severity?: Issue['severity']) =>
   issues.filter((i) => !severity || i.severity === severity).map((i) => i.message);
 
 describe('validate', () => {
-  it('a fresh agent needs a task message and an edge', () => {
+  it('a fresh agent needs a task message, and an edge or to end the call', () => {
     const issues = validate(draft());
-    expect(messages(issues, 'error')).toEqual(['Task message is required.']);
-    expect(messages(issues, 'warning')).toEqual([
-      expect.stringContaining('No outgoing edges and not marked as ending the call'),
+    expect(messages(issues, 'error')).toEqual([
+      'Task message is required.',
+      'Every branch must end the call: tick "Ends the call", or add an edge to carry on.',
     ]);
+    expect(messages(issues, 'warning')).toEqual([]);
+  });
+
+  it('every leaf must end the call, as an error that blocks export', () => {
+    const g = draft().initialNodeId;
+    actions().updateNode(g, { taskMessage: 't' });
+    addNode(addEdge(g, { function: 'done', description: 'd' }), { taskMessage: 't', end: true });
+    const open = addNode(addEdge(g, { function: 'open', description: 'd' }), { taskMessage: 't' });
+
+    const leafIssues = validate(draft()).filter((i) => i.field === 'end');
+    expect(leafIssues).toEqual([
+      { target: { kind: 'node', id: open }, field: 'end', severity: 'error', message: expect.stringContaining('Every branch must end the call') },
+    ]);
+    expect(erroredIds(validate(draft()))).toEqual(new Set([open]));
+
+    actions().updateNode(open, { end: true });
+    expect(validate(draft())).toEqual([]);
+  });
+
+  it('a dangling edge counts as carrying on; the edge itself is flagged instead', () => {
+    const g = draft().initialNodeId;
+    actions().updateNode(g, { taskMessage: 't' });
+    addEdge(g, { function: 'go', description: 'd' });
+    expect(validate(draft()).map((i) => i.field)).toEqual(['target']);
   });
 
   it('the example flow is fully valid', () => {

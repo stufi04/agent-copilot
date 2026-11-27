@@ -50,7 +50,7 @@ make ui-e2e-open  # the same tests in Playwright's interactive UI
 - **Undo / Redo** (top bar, or ⌘Z / ⇧⌘Z; Ctrl+Z / Ctrl+Y elsewhere) step back through every change: moves, adds, deletes, field edits, imports and resets. Typing in one field counts as a single step until you switch fields or pause for a second. History is kept for the current session (last 100 steps).
 - **Import JSON** (next to Export) loads an agent file in the backend format, e.g. `backend/example_flow.json`, and replaces the graph with it. Files the editor can't represent are rejected with the reasons; anything dropped on the way in (e.g. `pre_actions`) is listed as a warning. Only tree-shaped agents import: no loops or nodes reached by more than one edge.
 - The view zooms out to fit as the graph grows. Use the bottom-left controls to zoom manually.
-- Work is saved in the browser (localStorage). **Export JSON** downloads the agent in the `example_flow.json` format and is enabled once validation passes.
+- Work is saved in the browser (localStorage). **Export JSON** downloads the agent in the `example_flow.json` format and is enabled once validation passes. Among other checks, every branch must end the call: a node with no outgoing edges must be marked "Ends the call".
 - Run an exported agent by pointing `AGENT_FLOW` in `bot.py` at the file.
 
 ## Tests & CI
