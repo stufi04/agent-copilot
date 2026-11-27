@@ -29,15 +29,22 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 /* ---- top bar ---- */
 .top-bar {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  /* Three areas: agent on the left, editor controls dead centre, actions on the right. */
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
   height: 52px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--border);
 }
 .top-bar__title {
   border: none; background: none; font-size: 16px; font-weight: 600; cursor: pointer;
-  padding: 4px 8px; border-radius: 6px; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 4px 8px; border-radius: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .top-bar__title:hover { background: var(--bg); }
-.top-bar__actions { display: flex; gap: 8px; align-items: center; }
+.top-bar__agent { display: flex; align-items: center; gap: 2px; min-width: 0; justify-self: start; }
+.top-bar__controls {
+  display: flex; align-items: center; gap: 2px; padding: 3px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+}
+.top-bar__divider { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+.top-bar__actions { display: flex; gap: 8px; align-items: center; justify-self: end; }
 
 /* ---- buttons ---- */
 .btn {
@@ -53,6 +60,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .btn--warn { color: var(--error); }
 .btn--ok:disabled { color: var(--ok); opacity: 1; cursor: default; }
 .btn--small { padding: 3px 8px; font-size: 12px; }
+.btn--ghost { border-color: transparent; background: transparent; color: var(--muted); }
+.btn--ghost:hover:not(:disabled) { background: var(--surface); color: inherit; }
+.top-bar__agent .btn--ghost:hover:not(:disabled) { background: var(--bg); }
 .icon-btn {
   border: none; background: none; cursor: pointer; font-size: 20px; line-height: 1;
   width: 28px; height: 28px; border-radius: 6px; color: var(--muted); flex: none;
@@ -198,5 +208,5 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent-soft
 .notice li + li { margin-top: 4px; }
 
 /* ---- undo / redo ---- */
-.undo-redo { display: flex; gap: 4px; margin-right: 4px; }
+.undo-redo { display: flex; gap: 2px; }
 .btn--icon { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; padding-inline: 8px; }
