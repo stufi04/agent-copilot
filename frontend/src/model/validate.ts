@@ -41,8 +41,10 @@ export function validate(d: AgentDraft): Issue[] {
     const outgoing = edges.filter((e) => e.sourceId === n.id);
     if (n.end && outgoing.length)
       warn(t, 'end', 'Ends the call, but has outgoing edges. They will never be taken.');
+    // The agent is a tree, so every branch finishes at a leaf, and every leaf must end
+    // the call. Otherwise the conversation reaches it and has nowhere to go.
     if (!n.end && !outgoing.length)
-      warn(t, 'end', 'No outgoing edges and not marked as ending the call: the conversation gets stuck here.');
+      err(t, 'end', 'Every branch must end the call: tick "Ends the call", or add an edge to carry on.');
   }
 
   for (const e of edges) {

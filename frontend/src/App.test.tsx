@@ -114,12 +114,17 @@ describe('App', () => {
 
     await user.type(screen.getByLabelText(/^Task message/), 'Say hello.');
     expect(screen.queryByText('Task message is required.')).toBeNull();
+    expect(graphNode('Greeting').closest('.agent-node')).toHaveClass('has-error'); // still a leaf that doesn't end the call
+    expect(screen.getByText(/Every branch must end the call/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('checkbox', { name: /Ends the call/ }));
+    expect(screen.queryByText(/Every branch must end the call/)).toBeNull();
     expect(graphNode('Greeting').closest('.agent-node')).not.toHaveClass('has-error');
   });
 
   it('the problems list jumps to the element with the issue', async () => {
     const { user } = setup();
-    await user.click(screen.getByRole('button', { name: '1 error, 1 warning' }));
+    await user.click(screen.getByRole('button', { name: '2 errors, 0 warnings' }));
     await user.click(screen.getByRole('button', { name: /Task message is required/ }));
     expect(panelHeading()).toBe('Node');
     expect(screen.getByLabelText('Name')).toHaveValue('Greeting');
