@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ImportButton } from './ImportButton';
+import { UndoRedoButtons } from './UndoRedo';
 import { downloadJson, exportAgent } from './model/export';
 import { useEditor } from './model/store';
 import type { Issue } from './model/validate';
@@ -30,6 +31,7 @@ export function TopBar({ issues }: { issues: Issue[] }) {
         {draft.name.trim() || 'Untitled agent'}
       </button>
       <div className="top-bar__actions">
+        <UndoRedoButtons />
         <div className="problems">
           <button
             type="button"

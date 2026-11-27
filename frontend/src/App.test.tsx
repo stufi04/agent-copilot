@@ -272,5 +272,75 @@ describe('App', () => {
       expect(screen.getByRole('status')).toHaveTextContent('"pre_actions" isn\'t supported by the editor yet and was dropped.');
     });
   });
+
+  describe('Undo / Redo', () => {
+    const undoBtn = () => screen.getByRole('button', { name: 'Undo' });
+    const redoBtn = () => screen.getByRole('button', { name: 'Redo' });
+
+    it('buttons are disabled until there is something to undo or redo', () => {
+      setup();
+      expect(undoBtn()).toBeDisabled();
+      expect(redoBtn()).toBeDisabled();
+      plus('Add an edge');
+      expect(undoBtn()).toBeEnabled();
+      expect(redoBtn()).toBeDisabled();
+    });
+
+    it('the buttons undo and redo adding an edge', async () => {
+      const { user } = setup();
+      plus('Add an edge');
+      expect(graphPill('edge_1')).toBeInTheDocument();
+
+      await user.click(undoBtn());
+      expect(screen.queryByText('edge_1')).toBeNull();
+      expect(panelHeading()).toBeNull(); // the edge's panel closed with it
+      expect(redoBtn()).toBeEnabled();
+
+      await user.click(redoBtn());
+      expect(graphPill('edge_1')).toBeInTheDocument();
+      expect(panelHeading()).toBe('Edge');
+    });
+
+    it('⌘Z / Ctrl+Z undo and ⇧⌘Z redo', async () => {
+      const { user } = setup();
+      plus('Add an edge');
+      await user.keyboard('{Escape}');
+
+      await user.keyboard('{Meta>}z{/Meta}');
+      expect(screen.queryByText('edge_1')).toBeNull();
+      await user.keyboard('{Meta>}{Shift>}z{/Shift}{/Meta}');
+      expect(graphPill('edge_1')).toBeInTheDocument();
+      await user.keyboard('{Control>}z{/Control}');
+      expect(screen.queryByText('edge_1')).toBeNull();
+    });
+
+    it('typing a name is one step, and ⌘Z works while still in the field', async () => {
+      const { user } = setup();
+      canvasClick(graphNode('Greeting'));
+      const name = screen.getByLabelText('Name');
+      await user.clear(name);
+      await user.type(name, 'Welcome');
+      expect(graphNode('Welcome')).toBeInTheDocument();
+
+      await user.keyboard('{Meta>}z{/Meta}'); // focus still in the field
+      expect(name).toHaveValue('Greeting'); // clearing and retyping was one edit
+      expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+      expect(graphNode('Greeting')).toBeInTheDocument();
+    });
+
+    it('undoing a delete brings the node back and opens it', async () => {
+      buildTree();
+      const { user } = setup();
+      canvasClick(graphNode('A'));
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      await user.click(screen.getByRole('button', { name: /^Delete/ }));
+      expect(screen.queryByText('B', { selector: '.agent-node__name' })).toBeNull();
+
+      await user.click(undoBtn());
+      expect(graphNode('A')).toBeInTheDocument();
+      expect(graphNode('B')).toBeInTheDocument();
+      expect(screen.getByLabelText('Name')).toHaveValue('A');
+    });
+  });
 });
 

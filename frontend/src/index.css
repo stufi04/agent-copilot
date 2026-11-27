@@ -194,3 +194,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent-soft
 .notice__sub { margin: 6px 0 0; color: var(--muted); }
 .notice ul { margin: 6px 0 0; padding-left: 18px; }
 .notice li + li { margin-top: 4px; }
+
+/* ---- undo / redo ---- */
+.undo-redo { display: flex; gap: 4px; margin-right: 4px; }
+.btn--icon { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; padding-inline: 8px; }

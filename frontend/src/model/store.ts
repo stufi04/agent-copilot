@@ -58,9 +58,41 @@ function removeNodes(draft: AgentDraft, ids: Set<Id>): Pick<AgentDraft, 'nodes' 
   return { nodes, edges };
 }
 
+// ---- undo history ----
+// Each change that touches the agent saves the version before it. Typing is merged:
+// consecutive edits to the same text field become one step, until you switch fields
+// or pause for MERGE_MS. History lives in memory only; a reload starts it afresh.
+export const HISTORY_LIMIT = 100;
+export const MERGE_MS = 1000;
+
+/** Text edits merge into one undo step; toggles and other values never do. */
+const mergeKey = (scope: string, patch: object): string | undefined =>
+  Object.values(patch).every((v) => typeof v === 'string') ? `${scope}:${Object.keys(patch).sort().join()}` : undefined;
+
+/**
+ * Selection after jumping to another version: select what came back (prefer a node),
+ * drop a selection that no longer exists, otherwise keep it.
+ */
+function selectionAfter(selection: Selection, to: AgentDraft, from: AgentDraft): Selection {
+  const restoredNode = Object.keys(to.nodes).find((id) => !from.nodes[id]);
+  if (restoredNode) return { kind: 'node', id: restoredNode };
+  const restoredEdge = Object.keys(to.edges).find((id) => !from.edges[id]);
+  if (restoredEdge) return { kind: 'edge', id: restoredEdge };
+  if (selection?.kind === 'node' && !to.nodes[selection.id]) return null;
+  if (selection?.kind === 'edge' && !to.edges[selection.id]) return null;
+  return selection;
+}
+
 interface EditorState {
   draft: AgentDraft;
   selection: Selection;
+  /** Earlier versions of the draft, oldest first. */
+  past: AgentDraft[];
+  /** Undone versions, next to redo first. */
+  future: AgentDraft[];
+
+  undo: () => void;
+  redo: () => void;
 
   select: (selection: Selection) => void;
   updateAgent: (patch: Partial<Pick<AgentDraft, 'name' | 'persona' | 'voiceId' | 'model'>>) => void;
@@ -82,25 +114,76 @@ interface EditorState {
 
 export const useEditor = create<EditorState>()(
   persist(
-    (set, get) => {
-      const setDraft = (fn: (d: AgentDraft) => Partial<AgentDraft>) =>
-        set((s) => ({ draft: { ...s.draft, ...fn(s.draft) } }));
+    (rawSet, get) => {
+      let lastKey: string | undefined;
+      let lastAt = 0;
 
-      const patchEdge = (id: Id, fn: (e: AgentEdge) => AgentEdge) =>
-        setDraft((d) => (d.edges[id] ? { edges: { ...d.edges, [id]: fn(d.edges[id]) } } : {}));
+      /** Apply a change; if it touches the draft, record the previous version for undo. */
+      const set = (
+        update: Partial<EditorState> | ((s: EditorState) => Partial<EditorState>),
+        key?: string,
+      ) =>
+        rawSet((s) => {
+          const next = typeof update === 'function' ? update(s) : update;
+          if (!next.draft || next.draft === s.draft) return next;
+          const now = Date.now();
+          const merge = key !== undefined && key === lastKey && now - lastAt < MERGE_MS && s.past.length > 0;
+          lastKey = key;
+          lastAt = now;
+          return { ...next, past: merge ? s.past : [...s.past, s.draft].slice(-HISTORY_LIMIT), future: [] };
+        });
+
+      const setDraft = (fn: (d: AgentDraft) => Partial<AgentDraft>, key?: string) =>
+        set((s) => ({ draft: { ...s.draft, ...fn(s.draft) } }), key);
+
+      const patchEdge = (id: Id, fn: (e: AgentEdge) => AgentEdge, key?: string) =>
+        setDraft((d) => (d.edges[id] ? { edges: { ...d.edges, [id]: fn(d.edges[id]) } } : {}), key);
 
       return {
         draft: initialDraft(),
         selection: null,
+        past: [],
+        future: [],
+
+        undo: () => {
+          lastKey = undefined; // the next edit starts a new step
+          rawSet((s) => {
+            const prev = s.past.at(-1);
+            if (!prev) return {};
+            return {
+              draft: prev,
+              past: s.past.slice(0, -1),
+              future: [s.draft, ...s.future],
+              selection: selectionAfter(s.selection, prev, s.draft),
+            };
+          });
+        },
+
+        redo: () => {
+          lastKey = undefined;
+          rawSet((s) => {
+            const next = s.future[0];
+            if (!next) return {};
+            return {
+              draft: next,
+              past: [...s.past, s.draft],
+              future: s.future.slice(1),
+              selection: selectionAfter(s.selection, next, s.draft),
+            };
+          });
+        },
 
         select: (selection) => set({ selection }),
 
-        updateAgent: (patch) => setDraft(() => patch),
+        updateAgent: (patch) => setDraft(() => patch, mergeKey('agent', patch)),
 
         updateNode: (id, patch) =>
-          setDraft((d) => (d.nodes[id] ? { nodes: { ...d.nodes, [id]: { ...d.nodes[id], ...patch } } } : {})),
+          setDraft(
+            (d) => (d.nodes[id] ? { nodes: { ...d.nodes, [id]: { ...d.nodes[id], ...patch } } } : {}),
+            mergeKey(`node:${id}`, patch),
+          ),
 
-        updateEdge: (id, patch) => patchEdge(id, (e) => ({ ...e, ...patch })),
+        updateEdge: (id, patch) => patchEdge(id, (e) => ({ ...e, ...patch }), mergeKey(`edge:${id}`, patch)),
 
         addEdge: (sourceNodeId) => {
           const d = get().draft;
@@ -153,10 +236,11 @@ export const useEditor = create<EditorState>()(
           })),
 
         updateProperty: (edgeId, propId, patch) =>
-          patchEdge(edgeId, (e) => ({
-            ...e,
-            properties: e.properties.map((p) => (p.id === propId ? { ...p, ...patch } : p)),
-          })),
+          patchEdge(
+            edgeId,
+            (e) => ({ ...e, properties: e.properties.map((p) => (p.id === propId ? { ...p, ...patch } : p)) }),
+            mergeKey(`property:${propId}`, patch),
+          ),
 
         removeProperty: (edgeId, propId) =>
           patchEdge(edgeId, (e) => ({ ...e, properties: e.properties.filter((p) => p.id !== propId) })),
