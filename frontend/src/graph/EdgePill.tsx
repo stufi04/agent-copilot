@@ -23,7 +23,6 @@ export const EdgePill = memo(function EdgePill({ id, data }: NodeProps<EdgePillN
         {data.label}
       </span>
       <Handle type="source" position={Position.Bottom} isConnectable={false} className="hidden-handle" />
-      <Handle id="link" type="source" position={Position.Right} isConnectable={false} className="hidden-handle" />
       {/* An edge has exactly one target, so [+] only exists while it's dangling. */}
       {data.dangling && <PlusButton label="Add the target node" onClick={() => addNodeFromEdge(id)} />}
     </div>

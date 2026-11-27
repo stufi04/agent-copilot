@@ -137,15 +137,26 @@ test('dropping on empty canvas snaps back and changes nothing', async ({ page })
   expect(json).toEqual(newAgent);
 });
 
-test('an invalid drop target is highlighted and the drop is ignored', async ({ page }) => {
+test('edges cannot be dragged: they stay with the node they come out of', async ({ page }) => {
   const editor = new Editor(page);
-  const collect = editor.node('Collect Details');
+  const pill = editor.pill('choose_intent');
+  const greeting = editor.node('Greeting');
+  // Pressing on an edge and moving pans the canvas, so compare against its source node.
+  const offset = async () => {
+    const [p, g] = [await editor.centre(pill), await editor.centre(greeting)];
+    return { x: p.x - g.x, y: p.y - g.y };
+  };
+  await editor.waitForCanvasToSettle();
+  const before = await offset();
 
-  // choose_intent already points at Collect Details.
-  await editor.drag(editor.pill('choose_intent'), collect, async () => {
-    await expect(collect).toHaveClass(/drop-invalid/);
+  await editor.drag(pill, editor.node('Offer Times'), async () => {
+    await expect(page.locator('.react-flow__node.is-dragging')).toHaveCount(0);
+    await expect(editor.node('Offer Times')).not.toHaveClass(/drop-/);
   });
-  await expect(collect).not.toHaveClass(/drop-/);
+
+  const after = await offset();
+  expect(after.x).toBeCloseTo(before.x, 0);
+  expect(after.y).toBeCloseTo(before.y, 0);
   const { json } = await editor.exportJson();
   expect(json).toEqual(newAgent);
 });
@@ -160,60 +171,4 @@ test('the start node cannot be dragged', async ({ page }) => {
   });
   const { json } = await editor.exportJson();
   expect(json).toEqual(newAgent);
-});
-
-test('repointing an edge disconnects the old target until it is reconnected', async ({ page }) => {
-  const editor = new Editor(page);
-  const exportBtn = page.getByRole('button', { name: 'Export JSON' });
-  const collect = editor.node('Collect Details');
-
-  // choose_intent: Greeting → Offer Times, skipping Collect Details.
-  await editor.drag(editor.pill('choose_intent'), editor.node('Offer Times'), async () => {
-    await expect(editor.node('Offer Times')).toHaveClass(/drop-valid/);
-  });
-
-  await expect(collect).toHaveClass(/is-unreachable/);
-  await expect(collect.getByText('disconnected')).toBeVisible();
-  await expect(collect).toHaveClass(/has-error/);
-  await expect(exportBtn).toBeDisabled();
-  await expect(page.getByRole('button', { name: /^1 error/ })).toBeVisible();
-
-  // The disconnected part sits to the right of the main graph.
-  const greeting = (await editor.node('Greeting').boundingBox())!;
-  expect((await collect.boundingBox())!.x).toBeGreaterThan(greeting.x + greeting.width);
-
-  // Its panel says why.
-  await collect.click();
-  await expect(editor.panel.getByText(/Not connected to the start node/)).toBeVisible();
-  await page.keyboard.press('Escape');
-
-  // Drag the edge back: everything is connected again and the export matches the original.
-  await editor.drag(editor.pill('choose_intent'), collect);
-  await expect(collect).not.toHaveClass(/is-unreachable/);
-  await expect(exportBtn).toBeEnabled();
-  const { json } = await editor.exportJson();
-  expect(json).toEqual(newAgent);
-});
-
-test('dragging a disconnected node under another node reconnects it with a new edge', async ({ page }) => {
-  const editor = new Editor(page);
-  const collect = editor.node('Collect Details');
-
-  await editor.drag(editor.pill('choose_intent'), editor.node('Offer Times'));
-  await expect(collect).toHaveClass(/is-unreachable/);
-
-  // Collect Details has no incoming edge left, so dropping it on Greeting creates one.
-  await editor.drag(collect, editor.node('Greeting'));
-  await expect(collect).not.toHaveClass(/is-unreachable/);
-  await editor.expectPanel('Edge'); // the new edge is selected for naming
-  await expect(editor.panel.getByLabel(/^Function name/)).toHaveValue('edge_1');
-  await editor.panel.getByLabel(/^Function name/).fill('ask_details');
-  await editor.panel.getByLabel(/^Description/).fill('The caller wants to give their details first.');
-  await page.keyboard.press('Escape');
-
-  await expect(page.getByRole('button', { name: '✓ Valid' })).toBeVisible();
-  const { json } = await editor.exportJson();
-  expect(edgesOf(json as Exported, 'Greeting')).toEqual(['choose_intent→Offer Times', 'ask_details→Collect Details']);
-  // Offer Times is now reached two ways; the record_details link from Collect Details is kept.
-  expect(edgesOf(json as Exported, 'Collect Details')).toEqual(['record_details→Offer Times']);
 });

@@ -8,9 +8,9 @@ import type { AgentDraft, AgentEdge, AgentNode, EdgeProperty, Id, PropertyType }
 // - Warnings describe anything dropped or changed on the way in, so a later export
 //   won't silently differ from the file.
 //
-// The editor builds trees (each node is created from one edge), so the agent must be
-// one: every node except the start is the target of exactly one edge and reachable
-// from the start. Loops and shared nodes need the graph layout from drag-and-drop.
+// The editor builds trees (each node is created from one edge, and dragging a node
+// moves it with that edge), so the agent must be one: every node except the start is
+// the target of exactly one edge and reachable from the start. No loops.
 
 export type ImportResult =
   | { ok: true; draft: AgentDraft; warnings: string[] }

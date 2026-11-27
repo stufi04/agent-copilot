@@ -20,11 +20,6 @@ export function NodeForm({ node, issues }: { node: AgentNode; issues: Issue[] })
 
   return (
     <div className="form">
-      {issuesFor(issues, 'reachable').map((i) => (
-        <span key={i.message} className="field__issue field__issue--error banner">
-          {i.message}
-        </span>
-      ))}
       <Field label="Name" issues={issuesFor(issues, 'name')}>
         <input value={node.name} onChange={(e) => update({ name: e.target.value })} autoFocus />
       </Field>

@@ -1,9 +1,9 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import newAgent from '../e2e/fixtures/new_agent.json';
 import App from './App';
-import { actions, buildExampleFlow, buildTree, draft } from './test/helpers';
+import { buildExampleFlow, buildTree, draft } from './test/helpers';
 
 // The [+] buttons are revealed by CSS :hover, which jsdom doesn't apply. They're
 // always in the DOM though, so the tests click them directly.
@@ -191,36 +191,13 @@ describe('App', () => {
     expect(graphNode('Greeting')).toBeInTheDocument();
   });
 
-  it('shows disconnected nodes on the graph and in the panel, and blocks export', async () => {
-    buildExampleFlow();
-    const choose = Object.values(draft().edges).find((e) => e.function === 'choose_intent')!;
-    const offer = Object.values(draft().nodes).find((n) => n.name === 'offer_times')!;
-    setup();
-    act(() => actions().repointEdge(choose.id, offer.id));
-
-    const card = graphNode('collect_details').closest('.agent-node')!;
-    expect(card).toHaveClass('is-unreachable', 'has-error');
-    expect(within(card as HTMLElement).getByText('disconnected')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Export JSON' })).toBeDisabled();
-
-    canvasClick(graphNode('collect_details'));
-    expect(screen.getByText(/Not connected to the start node/)).toBeInTheDocument();
-    expect(screen.getByText(/Drag this node onto another node/)).toBeInTheDocument();
-  });
-
-  it('the start node is not draggable; others are', () => {
+  it('only nodes other than the start are draggable; edges are not', () => {
     buildTree();
     setup();
-    const wrapper = (name: string) => graphNode(name).closest('.react-flow__node')!;
-    expect(wrapper('Greeting')).not.toHaveClass('draggable');
-    expect(wrapper('A')).toHaveClass('draggable');
-  });
-
-  it('the edge panel explains drag-to-repoint', () => {
-    buildTree();
-    setup();
-    canvasClick(graphPill('a'));
-    expect(screen.getByText('Drag this edge onto any node to point it there.')).toBeInTheDocument();
+    const wrapper = (el: HTMLElement) => el.closest('.react-flow__node')!;
+    expect(wrapper(graphNode('Greeting'))).not.toHaveClass('draggable');
+    expect(wrapper(graphNode('A'))).toHaveClass('draggable');
+    expect(wrapper(graphPill('a'))).not.toHaveClass('draggable');
   });
 
   describe('Import JSON', () => {

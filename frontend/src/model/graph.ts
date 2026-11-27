@@ -1,9 +1,11 @@
 import type { AgentDraft, Id } from './types';
 
-// Graph queries over the draft. Since edges can be dragged onto any node, the agent
-// is a general directed graph: a node can have several incoming edges, there can be
-// loops (e.g. "go back to collect_details"), and parts can be disconnected from the
-// start node. These helpers are shared by the store, validation and layout.
+// Graph queries over the draft, shared by the store and the layout.
+//
+// The editor only ever builds a tree rooted at the start node: nodes are created from
+// an edge, and dragging a node moves it together with that edge. Loops and shared nodes
+// can't be made (and imports reject them). These helpers still cope with them without
+// hanging, so a malformed saved draft can't take the page down.
 
 function outgoing(d: AgentDraft, nodeId: Id) {
   return Object.values(d.edges).filter((e) => e.sourceId === nodeId);
@@ -22,11 +24,6 @@ export function reachableFrom(d: AgentDraft, from: Id, avoid?: Id): Set<Id> {
   return seen;
 }
 
-/** Nodes reachable from the start node. Everything else is disconnected. */
-export function reachableNodes(d: AgentDraft): Set<Id> {
-  return reachableFrom(d, d.initialNodeId);
-}
-
 export interface SpanningTree {
   /** For each node except roots: the edge it hangs under in the layout. */
   parentEdge: Map<Id, Id>;
@@ -36,9 +33,8 @@ export interface SpanningTree {
 
 /**
  * Picks one incoming edge per node, breadth-first from the start node and in
- * creation order, so the graph can be drawn as a tree. Edges not picked are loops
- * or cross-links. Disconnected parts get their own roots, earliest-created first,
- * which for a subtree cut off by repointing an edge is its old top node.
+ * creation order. For a tree that's simply every edge; for a malformed draft it
+ * skips loops and extra links, and gives disconnected parts their own roots.
  */
 export function spanningTree(d: AgentDraft): SpanningTree {
   const parentEdge = new Map<Id, Id>();

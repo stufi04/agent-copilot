@@ -73,8 +73,6 @@ interface EditorState {
   removeProperty: (edgeId: Id, propId: Id) => void;
   /** Drag a node onto another node: it moves there with its whole subtree. */
   moveNode: (nodeId: Id, newParentId: Id) => MoveCheck;
-  /** Drag an edge onto a node: the edge now leads there. */
-  repointEdge: (edgeId: Id, targetNodeId: Id) => void;
   deleteNode: (id: Id) => void;
   deleteEdge: (id: Id) => void;
   /** Replace the whole agent, e.g. with an imported one. */
@@ -168,49 +166,24 @@ export const useEditor = create<EditorState>()(
           const check = canMoveNode(d, nodeId, newParentId);
           if (!check.ok) return check;
 
-          const siblingNames = (except?: Id) =>
+          const siblingNames = (except: Id) =>
             Object.values(d.edges)
               .filter((e) => e.sourceId === newParentId && e.id !== except)
               .map((e) => e.function);
 
-          // The node moves along the edge it hangs from, so the subtree comes with it.
+          // The node moves along the edge it hangs from, so the subtree comes with it
+          // and the agent stays a tree.
           const parentEdgeId = spanningTree(d).parentEdge.get(nodeId);
-          if (parentEdgeId) {
-            const edge = d.edges[parentEdgeId];
-            if (edge.sourceId === newParentId) return check;
-            const moved: AgentEdge = {
-              ...edge,
-              sourceId: newParentId,
-              function: uniqueName(edge.function, siblingNames(edge.id)),
-            };
-            set({ draft: { ...d, edges: { ...d.edges, [edge.id]: moved } } });
-            return check;
-          }
-
-          // A disconnected node has no edge to bring: connect it with a new one,
-          // selected so the user can name and describe it.
-          const edge: AgentEdge = {
-            id: newId(),
+          if (!parentEdgeId) return { ok: false, reason: 'This node has no edge leading to it.' };
+          const edge = d.edges[parentEdgeId];
+          if (edge.sourceId === newParentId) return check;
+          const moved: AgentEdge = {
+            ...edge,
             sourceId: newParentId,
-            targetId: nodeId,
-            function: nextName('edge', siblingNames()),
-            description: '',
-            properties: [],
+            function: uniqueName(edge.function, siblingNames(edge.id)),
           };
-          set({
-            draft: { ...d, edges: { ...d.edges, [edge.id]: edge } },
-            selection: { kind: 'edge', id: edge.id },
-          });
+          set({ draft: { ...d, edges: { ...d.edges, [edge.id]: moved } } });
           return check;
-        },
-
-        repointEdge: (edgeId, targetNodeId) => {
-          const d = get().draft;
-          const edge = d.edges[edgeId];
-          if (!edge || !d.nodes[targetNodeId] || edge.targetId === targetNodeId) return;
-          // Whatever the edge led to before may now be cut off from the start node;
-          // validation flags that until it's reconnected or deleted.
-          set({ draft: { ...d, edges: { ...d.edges, [edgeId]: { ...edge, targetId: targetNodeId } } } });
         },
 
         deleteNode: (id) => {

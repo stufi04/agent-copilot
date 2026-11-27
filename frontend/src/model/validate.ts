@@ -1,4 +1,3 @@
-import { reachableNodes } from './graph';
 import type { AgentDraft, Id } from './types';
 
 export type IssueTarget = { kind: 'node'; id: Id } | { kind: 'edge'; id: Id } | { kind: 'agent' };
@@ -29,8 +28,6 @@ export function validate(d: AgentDraft): Issue[] {
   const nodes = Object.values(d.nodes);
   const edges = Object.values(d.edges);
 
-  const reachable = reachableNodes(d);
-
   const nameCounts = new Map<string, number>();
   for (const n of nodes) nameCounts.set(n.name.trim(), (nameCounts.get(n.name.trim()) ?? 0) + 1);
 
@@ -40,8 +37,6 @@ export function validate(d: AgentDraft): Issue[] {
     if (!name) err(t, 'name', 'Name is required.');
     else if ((nameCounts.get(name) ?? 0) > 1) err(t, 'name', `Another node is also named "${name}".`);
     if (!n.taskMessage.trim()) err(t, 'taskMessage', 'Task message is required.');
-    if (!reachable.has(n.id))
-      err(t, 'reachable', 'Not connected to the start node. Drag an edge onto it, drag it under another node, or delete it.');
 
     const outgoing = edges.filter((e) => e.sourceId === n.id);
     if (n.end && outgoing.length)

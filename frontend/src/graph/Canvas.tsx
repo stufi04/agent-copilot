@@ -1,10 +1,9 @@
 import { Background, Controls, ReactFlow, useReactFlow, type NodeTypes, type XYPosition } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { treeSubtree } from '../model/graph';
+import { canMoveNode, treeSubtree } from '../model/graph';
 import { useEditor } from '../model/store';
 import type { Id } from '../model/types';
 import { AgentNodeCard } from './AgentNodeCard';
-import { resolveDrop, type Dragged } from './drop';
 import { EdgePill } from './EdgePill';
 import { toFlow, type FlowNode } from './toFlow';
 
@@ -12,8 +11,13 @@ const nodeTypes: NodeTypes = { agentNode: AgentNodeCard, edgePill: EdgePill } as
 // Never zoom past 100% when fitting, so a small graph doesn't render huge.
 const FIT_OPTIONS = { padding: 0.2, maxZoom: 1, duration: 300 };
 
+// Only agent nodes are dragged, and only onto other agent nodes: the node moves there
+// with its whole subtree. Edges stay attached to the node they come out of, so the
+// agent is always a tree rooted at the start node (no loops, no shared nodes).
+
 interface DragState {
-  dragged: Dragged;
+  /** The agent node being dragged. */
+  nodeId: Id;
   /** How far the pointer has moved the dragged element from its laid-out position. */
   delta: XYPosition;
   /** The agent node under the pointer, if any. */
@@ -30,32 +34,26 @@ export function Canvas({ errored }: { errored: Set<Id> }) {
   const selection = useEditor((s) => s.selection);
   const select = useEditor((s) => s.select);
   const moveNode = useEditor((s) => s.moveNode);
-  const repointEdge = useEditor((s) => s.repointEdge);
   const { fitView, screenToFlowPosition } = useReactFlow();
   const [drag, setDrag] = useState<DragState | null>(null);
 
-  // What travels with a drag: a node brings its whole subtree; an edge moves alone.
+  // What travels with a drag: the node and its whole subtree.
   const movingIds = useCallback(
-    (dragged: Dragged): Set<Id> => {
-      if (dragged.kind === 'edge') return new Set([dragged.id]);
-      const { nodes, edges } = treeSubtree(draft, dragged.id);
+    (nodeId: Id): Set<Id> => {
+      const { nodes, edges } = treeSubtree(draft, nodeId);
       return new Set([...nodes, ...edges]);
     },
     [draft],
   );
-  const dragKind = drag?.dragged.kind;
-  const dragId = drag?.dragged.id;
-  const moving = useMemo(
-    () => (dragKind && dragId ? movingIds({ kind: dragKind, id: dragId }) : new Set<Id>()),
-    [dragKind, dragId, movingIds],
-  );
+  const dragId = drag?.nodeId;
+  const moving = useMemo(() => (dragId ? movingIds(dragId) : new Set<Id>()), [dragId, movingIds]);
 
   const over = drag?.over ?? null;
   const dropState = useMemo(() => {
-    if (!over || !dragKind || !dragId) return null;
-    const result = resolveDrop(draft, { kind: dragKind, id: dragId }, over);
+    if (!over || !dragId) return null;
+    const result = canMoveNode(draft, dragId, over);
     return { nodeId: over, state: result.ok ? ('valid' as const) : ('invalid' as const) };
-  }, [over, dragKind, dragId, draft]);
+  }, [over, dragId, draft]);
 
   const layout = useMemo(() => toFlow(draft, selection, errored, dropState), [draft, selection, errored, dropState]);
 
@@ -100,23 +98,18 @@ export function Canvas({ errored }: { errored: Set<Id> }) {
     return () => cancelAnimationFrame(frame);
   }, [count, agentId, refit]);
 
-  const draggedOf = (node: FlowNode): Dragged => ({ kind: node.type === 'edgePill' ? 'edge' : 'node', id: node.id });
-
   const onNodeDrag = (event: MouseEvent | TouchEvent, node: FlowNode) => {
     const base = layout.nodes.find((n) => n.id === node.id);
-    if (!base) return;
-    const dragged = draggedOf(node);
+    if (!base || node.type !== 'agentNode') return;
     const delta = { x: node.position.x - base.position.x, y: node.position.y - base.position.y };
-    setDrag({ dragged, delta, over: nodeAt(clientPoint(event), movingIds(dragged)) });
+    setDrag({ nodeId: node.id, delta, over: nodeAt(clientPoint(event), movingIds(node.id)) });
   };
 
   const onNodeDragStop = (event: MouseEvent | TouchEvent, node: FlowNode) => {
-    const dragged = draggedOf(node);
-    const over = nodeAt(clientPoint(event), movingIds(dragged));
+    if (node.type !== 'agentNode') return;
+    const over = nodeAt(clientPoint(event), movingIds(node.id));
     setDrag(null); // everything snaps back into the layout
-    if (!over || !resolveDrop(draft, dragged, over).ok) return;
-    if (dragged.kind === 'node') moveNode(dragged.id, over);
-    else repointEdge(dragged.id, over);
+    if (!over || !moveNode(node.id, over).ok) return;
     refit(); // the layout changed shape
   };
 

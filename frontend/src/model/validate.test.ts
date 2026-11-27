@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actions, addEdge, addField, addNode, buildExampleFlow, draft, nodeNamed } from '../test/helpers';
+import { actions, addEdge, addField, addNode, buildExampleFlow, draft } from '../test/helpers';
 import { erroredIds, issuesFor, validate, type Issue } from './validate';
 
 const messages = (issues: Issue[], severity?: Issue['severity']) =>
@@ -91,32 +91,6 @@ describe('validate', () => {
     const issues = validate(draft());
     expect(messages(issues, 'error')).toEqual([]);
     expect(messages(issues, 'warning')).toEqual([expect.stringContaining('Ends the call, but has outgoing edges')]);
-  });
-});
-
-describe('validate: disconnected parts', () => {
-  it('flags nodes cut off from the start until they are reconnected', () => {
-    buildExampleFlow();
-    const choose = Object.values(draft().edges).find((e) => e.function === 'choose_intent')!;
-    const offer = nodeNamed('offer_times');
-    actions().repointEdge(choose.id, offer.id); // greeting now skips collect_details
-
-    const cut = validate(draft()).filter((i) => i.field === 'reachable');
-    expect(cut.map((i) => i.target)).toEqual([{ kind: 'node', id: nodeNamed('collect_details').id }]);
-    expect(cut[0]).toMatchObject({ severity: 'error', message: expect.stringContaining('Not connected to the start node') });
-
-    // Moving it back under greeting reconnects it.
-    actions().moveNode(nodeNamed('collect_details').id, nodeNamed('greeting').id);
-    expect(validate(draft()).filter((i) => i.field === 'reachable')).toEqual([]);
-  });
-
-  it('a loop back to an earlier node is valid', () => {
-    buildExampleFlow();
-    const confirm = nodeNamed('confirm');
-    actions().updateNode(confirm.id, { end: false });
-    const again = addEdge(confirm.id, { function: 'start_over', description: 'Caller wants another appointment.' });
-    actions().repointEdge(again, nodeNamed('greeting').id);
-    expect(validate(draft())).toEqual([]);
   });
 });
 

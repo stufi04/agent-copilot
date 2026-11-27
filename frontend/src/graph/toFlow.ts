@@ -1,5 +1,5 @@
 import { MarkerType, type Edge, type Node } from '@xyflow/react';
-import { reachableNodes, spanningTree, type SpanningTree } from '../model/graph';
+import { spanningTree, type SpanningTree } from '../model/graph';
 import type { AgentDraft, Id, Selection } from '../model/types';
 
 // Projects the domain model onto React Flow and lays it out top-down.
@@ -9,9 +9,9 @@ import type { AgentDraft, Id, Selection } from '../model/types';
 // and carry a [+], including while dangling (no target yet), which a React Flow
 // edge can't represent. The lines on screen are plain connectors: source -> pill -> target.
 //
-// The agent graph can have loops, shared nodes and disconnected parts, so it's laid
-// out along a spanning tree (model/graph.ts): each node sits under one incoming edge,
-// and any other edge into it is drawn as a dashed "link" connector instead.
+// The editor only builds trees: every node except the start hangs under exactly one
+// edge, and there are no loops (see model/graph.ts). The layout still walks a spanning
+// tree rather than trusting that, so a malformed saved draft can't hang the page.
 
 // SIZED: every element has a fixed size and says so in `measured`. React Flow rebuilds
 // its record of a node whenever it gets a new node object (every drag frame, every
@@ -32,8 +32,6 @@ export type AgentNodeData = {
   isEnd: boolean;
   selected: boolean;
   hasError: boolean;
-  /** Not connected to the start node. */
-  unreachable: boolean;
   drop: DropState;
 };
 export type EdgePillData = {
@@ -55,7 +53,6 @@ export function toFlow(
   const isSelected = (kind: 'node' | 'edge', id: Id) =>
     selection?.kind === kind && selection.id === id;
   const tree = spanningTree(draft);
-  const reachable = reachableNodes(draft);
 
   const nodes: FlowNode[] = [];
   const edges: Edge[] = [];
@@ -76,7 +73,6 @@ export function toFlow(
         isEnd: n.end,
         selected: isSelected('node', n.id),
         hasError: errored.has(n.id),
-        unreachable: !reachable.has(n.id),
         drop: drop?.nodeId === n.id ? drop.state : null,
       },
     });
@@ -90,6 +86,8 @@ export function toFlow(
       width: PILL_W,
       height: PILL_H,
       measured: { width: PILL_W, height: PILL_H }, // see SIZED below
+      // An edge always stays with the node it comes out of; it moves when that node does.
+      draggable: false,
       data: {
         label: e.function.trim() || 'unnamed_edge',
         dangling: !e.targetId,
@@ -99,24 +97,11 @@ export function toFlow(
     });
     edges.push({ id: `${e.sourceId}->${e.id}`, source: e.sourceId, target: e.id });
     if (e.targetId) {
-      const isTreeLink = tree.parentEdge.get(e.targetId) === e.id;
       edges.push({
         id: `${e.id}->${e.targetId}`,
         source: e.id,
         target: e.targetId,
         markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-        // Loops and links to nodes drawn elsewhere: a dashed line between the right-hand
-        // sides, stepping out to the right so it goes around the tree rather than behind it.
-        ...(isTreeLink
-          ? {}
-          : {
-              type: 'smoothstep',
-              pathOptions: { offset: 36, borderRadius: 12 },
-              sourceHandle: 'link',
-              targetHandle: 'link',
-              className: 'link-edge',
-              style: { strokeDasharray: '6 4', strokeWidth: 1.5 },
-            }),
       });
     }
   }
@@ -130,7 +115,7 @@ const V_GAP = 44; // vertical gap between a node and its edge pills (and pill ->
 /**
  * Tidy tree layout along the spanning tree: each node's edges fan out beneath it
  * in creation order with equal gaps, and each parent is centred over its children.
- * The start node's tree comes first; disconnected parts are laid out to its right.
+ * The start node's tree comes first; anything else (only in a malformed draft) goes to its right.
  */
 function layoutTree(draft: AgentDraft, tree: SpanningTree, nodes: FlowNode[]): FlowNode[] {
   const byId = new Map(nodes.map((n) => [n.id, n]));
