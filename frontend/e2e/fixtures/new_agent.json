@@ -1,0 +1,108 @@
+{
+  "name": "New agent",
+  "voice_id": "21m00Tcm4TlvDq8ikWAM",
+  "model": "gpt-4o",
+  "persona": "You are a warm, efficient scheduling assistant for a healthcare clinic. Your responses are spoken aloud, so avoid emojis, lists, or anything that can't be read out. Keep replies to one or two short sentences. Always use an available function to move the conversation forward.",
+  "initial_node": "Greeting",
+  "nodes": [
+    {
+      "name": "Greeting",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Greet the caller, say you're the clinic's scheduling assistant, and ask whether they'd like to book, reschedule, or cancel an appointment."
+        }
+      ],
+      "edges": [
+        {
+          "function": "choose_intent",
+          "description": "Record what the caller wants to do once they say it.",
+          "target": "Collect Details",
+          "properties": {
+            "intent": {
+              "type": "string",
+              "description": "What the caller wants to do.",
+              "enum": [
+                "book",
+                "reschedule",
+                "cancel"
+              ]
+            }
+          },
+          "required": [
+            "intent"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Collect Details",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Collect the caller's full name and the reason for the visit. Ask for whatever is still missing, one question at a time."
+        }
+      ],
+      "edges": [
+        {
+          "function": "record_details",
+          "description": "Record the caller's name and reason once both are known.",
+          "target": "Offer Times",
+          "properties": {
+            "full_name": {
+              "type": "string",
+              "description": "Caller's full name."
+            },
+            "reason": {
+              "type": "string",
+              "description": "Reason for the visit."
+            }
+          },
+          "required": [
+            "full_name",
+            "reason"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Offer Times",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Offer exactly two options: Tuesday at 10 AM, or Thursday at 2 PM. Ask which one works for them."
+        }
+      ],
+      "edges": [
+        {
+          "function": "select_time",
+          "description": "Record the slot the caller picks.",
+          "target": "Confirm",
+          "properties": {
+            "slot": {
+              "type": "string",
+              "description": "The chosen appointment slot.",
+              "enum": [
+                "Tuesday 10 AM",
+                "Thursday 2 PM"
+              ]
+            }
+          },
+          "required": [
+            "slot"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Confirm",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Confirm the appointment back to the caller, including their name and the chosen time, thank them, and say goodbye."
+        }
+      ],
+      "end": true
+    }
+  ]
+}
