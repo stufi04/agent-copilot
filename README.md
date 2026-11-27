@@ -31,6 +31,25 @@ uv run --directory backend python bot.py   # run the agent
 \
 Remember to update the `.env` file accordingly.
 
+## Agent editor (frontend)
+
+A React + TypeScript graph editor for building agents visually. Requires **Node 22+** (`frontend/.nvmrc`).
+
+```bash
+make ui-install   # npm install in frontend/
+make ui           # Vite dev server at http://localhost:5173
+make ui-test      # Vitest: model, layout and UI tests
+make ui-e2e       # Playwright: clicks through the real app in Chromium
+                  # (first time: npx --prefix frontend playwright install chromium)
+make ui-e2e-open  # the same tests in Playwright's interactive UI
+```
+
+- The page opens with a single **Greeting** node. Click any node or edge to edit it in the side panel.
+- Hover a node and click **[+]** to add an edge. Hover a dangling edge and click **[+]** to add its target node.
+- The view zooms out to fit as the graph grows. Use the bottom-left controls to zoom manually.
+- Work is saved in the browser (localStorage). **Export JSON** downloads the agent in the `example_flow.json` format and is enabled once validation passes.
+- Run an exported agent by pointing `AGENT_FLOW` in `bot.py` at the file.
+
 ## Layout
 
 | Path | Responsibility |
@@ -38,5 +57,8 @@ Remember to update the `.env` file accordingly.
 | `backend/bot.py` | The voice pipeline (WebRTC + ElevenLabs STT/TTS + OpenAI LLM). Loads an agent JSON via `AgentBuilder` and runs it. No graph logic lives here. |
 | `backend/agent_builder/` | All agent-building code. `schema.py` = the declarative `AgentConfig` / `Node` / `Edge` contract; `builder.py` = `AgentBuilder`, which loads + validates the JSON and compiles it into a Pipecat Flows graph. |
 | `backend/example_flow.json` | The example agent **as data** — a clinic scheduler. The artifact the Phase 2 Composer generates/edits. |
+| `frontend/src/model/` | Editor state (zustand, persisted), validation, and export to the backend JSON format. |
+| `frontend/src/graph/` | React Flow canvas, node/edge-pill components, and the tree layout. |
+| `frontend/src/panel/` | Right-hand side panel with the node, edge and agent-settings forms. |
 
 To run a different agent, point `AGENT_FLOW` in `bot.py` at another JSON file.
