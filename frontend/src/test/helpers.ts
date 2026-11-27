@@ -14,16 +14,6 @@ export function edgesFrom(nodeId: Id): AgentEdge[] {
   return Object.values(draft().edges).filter((e) => e.sourceId === nodeId);
 }
 
-/**
- * Points an edge at a node by writing the draft directly. The editor can't do this
- * (it only builds trees); it's for checking that malformed drafts, e.g. an old save,
- * with loops or shared nodes are handled without hanging.
- */
-export function forceTarget(edgeId: Id, nodeId: Id) {
-  const d = draft();
-  useEditor.setState({ draft: { ...d, edges: { ...d.edges, [edgeId]: { ...d.edges[edgeId], targetId: nodeId } } } });
-}
-
 /** The id of the edge most recently added (addEdge selects it). */
 function selectedId(): Id {
   const sel = useEditor.getState().selection;

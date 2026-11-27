@@ -80,22 +80,20 @@ test.describe('Import JSON', () => {
     await expect(editor.pill('edge_1')).toHaveCount(0);
   });
 
-  test('rejects an agent with a loop and explains why', async ({ page }) => {
+  test('imports an agent with a loop and draws the loop dashed', async ({ page }) => {
     const editor = new Editor(page);
     await editor.open();
     const looped = read(NEW_AGENT);
-    const confirm = looped.nodes.find((n) => n.name === 'Confirm')!;
-    delete confirm.end;
-    confirm.edges = [{ function: 'start_over', description: 'Again.', target: 'Greeting', properties: {}, required: [] }];
+    const offer = looped.nodes.find((n) => n.name === 'Offer Times')!;
+    offer.edges!.push({ function: 'change_details', description: 'None of the times work.', target: 'Collect Details', properties: {}, required: [] });
 
     await editor.importFile({ name: 'looped.json', json: looped });
 
-    const alert = page.getByRole('alert');
-    await expect(alert).toContainText("Couldn't import looped.json");
-    await expect(alert).toContainText('Loops back to the start aren\'t supported yet.');
-    await expect(page.locator('.agent-node')).toHaveCount(1); // untouched
-    await alert.getByRole('button', { name: 'Dismiss' }).click();
-    await expect(alert).toHaveCount(0);
+    await expect(page.getByRole('status')).toContainText('4 nodes, 4 edges');
+    await expect(page.locator('.react-flow__edge.link-edge')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: '✓ Valid' })).toBeVisible();
+    const { json } = await editor.exportJson();
+    expect(json).toEqual(looped);
   });
 
   test('the imported agent survives a reload', async ({ page }) => {

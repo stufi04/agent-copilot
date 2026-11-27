@@ -136,12 +136,50 @@ describe('toFlow: graphs that are not trees', () => {
 });
 
 describe('toFlow: drag & drop', () => {
-  it('only nodes other than the start are draggable; edge pills never are', () => {
+  it('the start node is not draggable; other nodes and pills are', () => {
     const { g, a, A } = buildTree();
     const { nodes } = flow();
     expect(byId(nodes, g).draggable).toBe(false);
     expect(byId(nodes, A).draggable).toBe(true);
-    expect(byId(nodes, a).draggable).toBe(false);
+    expect(byId(nodes, a).draggable).toBeUndefined(); // React Flow default: draggable
+  });
+
+  it('marks an edge pill under a dragged node as a drop target', () => {
+    const { c } = buildTree();
+    const { nodes } = toFlow(draft(), null, new Set(), { nodeId: c, state: 'invalid' });
+    expect(byId(nodes, c).data).toMatchObject({ drop: 'invalid' });
+  });
+});
+
+describe('toFlow: links', () => {
+  const lineTo = (edgeId: string, targetId: string) => flow().edges.find((e) => e.id === `${edgeId}->${targetId}`)!;
+
+  it('tree edges are solid', () => {
+    const { a, A } = buildTree();
+    expect(lineTo(a, A).className).toBeUndefined();
+  });
+
+  it('a link back up the tree, or to itself, is dashed and routed on the right', () => {
+    const { g, B } = buildTree();
+    const before = flow().nodes;
+    actions().linkNodes(B, g);
+    actions().linkNodes(B, B);
+    const [up, self] = Object.values(draft().edges).filter((e) => e.sourceId === B).map((e) => e.id);
+    for (const [id, target] of [[up, g], [self, B]]) {
+      expect(lineTo(id, target)).toMatchObject({ className: 'link-edge', sourceHandle: 'link', targetHandle: 'link' });
+      expect(lineTo(id, target).style).toMatchObject({ strokeDasharray: '6 4' });
+    }
+    expect(byId(flow().nodes, g).position.y).toBe(byId(before, g).position.y); // the start stays on top
+  });
+
+  it('a link sideways (same depth) is dashed; a link further down is solid', () => {
+    const { A, B, C } = buildTree();
+    actions().linkNodes(A, C); // A and C are both at depth 1
+    actions().linkNodes(C, B); // B is at depth 2, below C
+    const [side] = Object.values(draft().edges).filter((e) => e.sourceId === A && e.targetId === C);
+    const [down] = Object.values(draft().edges).filter((e) => e.sourceId === C && e.targetId === B);
+    expect(lineTo(side.id, C).className).toBe('link-edge');
+    expect(lineTo(down.id, B).className).toBeUndefined();
   });
 
   it('marks the node under a drag as a valid or invalid drop target', () => {

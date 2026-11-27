@@ -1,11 +1,12 @@
 import type { AgentDraft, Id } from './types';
 
-// Graph queries over the draft, shared by the store and the layout.
+// Graph queries over the draft, shared by the store, validation and the layout.
 //
-// The editor only ever builds a tree rooted at the start node: nodes are created from
-// an edge, and dragging a node moves it together with that edge. Loops and shared nodes
-// can't be made (and imports reject them). These helpers still cope with them without
-// hanging, so a malformed saved draft can't take the page down.
+// The agent is a directed graph that always alternates node -> edge -> node. Dragging
+// moves a node or an edge together with everything hanging below it in the tree, so
+// it can't cut anything off from the start node. Loops and shared nodes are made on
+// purpose, by dragging from a [+] to an existing node; they're drawn as extra links
+// on top of a spanning tree (see spanningTree).
 
 function outgoing(d: AgentDraft, nodeId: Id) {
   return Object.values(d.edges).filter((e) => e.sourceId === nodeId);
@@ -22,6 +23,11 @@ export function reachableFrom(d: AgentDraft, from: Id, avoid?: Id): Set<Id> {
     for (const e of outgoing(d, id)) if (e.targetId) queue.push(e.targetId);
   }
   return seen;
+}
+
+/** Nodes reachable from the start node. Everything else is disconnected. */
+export function reachableNodes(d: AgentDraft): Set<Id> {
+  return reachableFrom(d, d.initialNodeId);
 }
 
 export interface SpanningTree {
@@ -109,12 +115,70 @@ export function treeSubtree(d: AgentDraft, rootId: Id, tree = spanningTree(d)): 
 
 export type MoveCheck = { ok: true } | { ok: false; reason: string };
 
-/** Can `nodeId` (with its subtree) be moved under `newParentId`? */
-export function canMoveNode(d: AgentDraft, nodeId: Id, newParentId: Id): MoveCheck {
-  if (!d.nodes[nodeId] || !d.nodes[newParentId]) return { ok: false, reason: 'Unknown node.' };
+/** Breadth-first depth of every node along the spanning tree (roots are 0). */
+export function depths(d: AgentDraft, tree = spanningTree(d)): Map<Id, number> {
+  const depth = new Map<Id, number>();
+  for (const root of tree.roots) {
+    depth.set(root, 0);
+    const queue = [root];
+    while (queue.length) {
+      const id = queue.shift()!;
+      for (const e of outgoing(d, id)) {
+        if (e.targetId && tree.parentEdge.get(e.targetId) === e.id && !depth.has(e.targetId)) {
+          depth.set(e.targetId, depth.get(id)! + 1);
+          queue.push(e.targetId);
+        }
+      }
+    }
+  }
+  return depth;
+}
+
+/**
+ * What travels with a dragged edge: the edge itself and, if it's the edge its target
+ * hangs from in the tree, the target's whole subtree. A link (loop or shared node)
+ * moves alone.
+ */
+export function edgeSubtree(d: AgentDraft, edgeId: Id, tree = spanningTree(d)): { nodes: Set<Id>; edges: Set<Id> } {
+  const edge = d.edges[edgeId];
+  const nodes = new Set<Id>();
+  const edges = new Set<Id>([edgeId]);
+  if (edge?.targetId && tree.parentEdge.get(edge.targetId) === edgeId) {
+    const below = treeSubtree(d, edge.targetId, tree);
+    below.nodes.forEach((n) => nodes.add(n));
+    below.edges.forEach((e) => edges.add(e));
+  }
+  return { nodes, edges };
+}
+
+/** Can node `nodeId` (with its subtree) be attached to the end of edge `edgeId`? */
+export function canAttachNode(d: AgentDraft, nodeId: Id, edgeId: Id): MoveCheck {
+  const edge = d.edges[edgeId];
+  if (!d.nodes[nodeId] || !edge) return { ok: false, reason: 'Unknown node or edge.' };
   if (nodeId === d.initialNodeId) return { ok: false, reason: "The start node can't be moved." };
-  if (nodeId === newParentId) return { ok: false, reason: "A node can't be moved under itself." };
-  if (treeSubtree(d, nodeId).nodes.has(newParentId))
-    return { ok: false, reason: "A node can't be moved under its own subtree." };
+  if (edge.targetId === nodeId) return { ok: false, reason: 'The node is already attached to this edge.' };
+  if (edge.targetId) return { ok: false, reason: 'This edge already leads to a node. Only an empty edge can take one.' };
+  if (treeSubtree(d, nodeId).edges.has(edgeId)) return { ok: false, reason: "A node can't be attached below itself." };
+  return { ok: true };
+}
+
+/** Can node `nodeId` (with its subtree) be hung under node `parentId`, through a new edge? */
+export function canAttachNodeToNode(d: AgentDraft, nodeId: Id, parentId: Id): MoveCheck {
+  if (!d.nodes[nodeId] || !d.nodes[parentId]) return { ok: false, reason: 'Unknown node.' };
+  if (nodeId === d.initialNodeId) return { ok: false, reason: "The start node can't be moved." };
+  const tree = spanningTree(d);
+  const parentEdge = tree.parentEdge.get(nodeId);
+  if (parentEdge && d.edges[parentEdge].sourceId === parentId)
+    return { ok: false, reason: 'The node already hangs under this node.' };
+  if (treeSubtree(d, nodeId, tree).nodes.has(parentId)) return { ok: false, reason: "A node can't be moved below itself." };
+  return { ok: true };
+}
+
+/** Can edge `edgeId` (with what hangs below it) be moved to come out of `nodeId`? */
+export function canMoveEdge(d: AgentDraft, edgeId: Id, nodeId: Id): MoveCheck {
+  const edge = d.edges[edgeId];
+  if (!edge || !d.nodes[nodeId]) return { ok: false, reason: 'Unknown node or edge.' };
+  if (edge.sourceId === nodeId) return { ok: false, reason: 'The edge already comes out of this node.' };
+  if (edgeSubtree(d, edgeId).nodes.has(nodeId)) return { ok: false, reason: "An edge can't be moved below its own target." };
   return { ok: true };
 }

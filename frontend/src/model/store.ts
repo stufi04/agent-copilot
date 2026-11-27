@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { canMoveNode, nodesRemovedBy, spanningTree, type MoveCheck } from './graph';
+import { canAttachNode, canAttachNodeToNode, canMoveEdge, nodesRemovedBy, spanningTree, type MoveCheck } from './graph';
 import type { AgentDraft, AgentEdge, AgentNode, EdgeProperty, Id, Selection } from './types';
 
 // Defaults mirror backend/agent_builder/schema.py and example_flow.json.
@@ -103,8 +103,19 @@ interface EditorState {
   addProperty: (edgeId: Id) => void;
   updateProperty: (edgeId: Id, propId: Id, patch: Partial<Omit<EdgeProperty, 'id'>>) => void;
   removeProperty: (edgeId: Id, propId: Id) => void;
-  /** Drag a node onto another node: it moves there with its whole subtree. */
-  moveNode: (nodeId: Id, newParentId: Id) => MoveCheck;
+  /** Drag a node onto an empty edge: it leaves the edge it hung from and moves there, with its subtree. */
+  attachNodeToEdge: (nodeId: Id, edgeId: Id) => MoveCheck;
+  /**
+   * Drag a node onto another node: a new edge (selected, for naming) joins them, and the
+   * dragged node hangs from it with its subtree. Its old edge stays put, left empty.
+   */
+  attachNodeToNode: (nodeId: Id, parentId: Id) => MoveCheck;
+  /** Drag an edge onto a node: it comes out of that node now, bringing what hangs below it. */
+  moveEdge: (edgeId: Id, sourceId: Id) => MoveCheck;
+  /** Drag from a dangling edge's [+] to a node: the edge leads there (may make a loop). */
+  connectEdge: (edgeId: Id, targetId: Id) => void;
+  /** Drag from a node's [+] to a node: a new edge between them (may make a loop). Selects it. */
+  linkNodes: (sourceId: Id, targetId: Id) => void;
   deleteNode: (id: Id) => void;
   deleteEdge: (id: Id) => void;
   /** Replace the whole agent, e.g. with an imported one. */
@@ -245,29 +256,79 @@ export const useEditor = create<EditorState>()(
         removeProperty: (edgeId, propId) =>
           patchEdge(edgeId, (e) => ({ ...e, properties: e.properties.filter((p) => p.id !== propId) })),
 
-        moveNode: (nodeId, newParentId) => {
+        attachNodeToEdge: (nodeId, edgeId) => {
           const d = get().draft;
-          const check = canMoveNode(d, nodeId, newParentId);
+          const check = canAttachNode(d, nodeId, edgeId);
           if (!check.ok) return check;
-
-          const siblingNames = (except: Id) =>
-            Object.values(d.edges)
-              .filter((e) => e.sourceId === newParentId && e.id !== except)
-              .map((e) => e.function);
-
-          // The node moves along the edge it hangs from, so the subtree comes with it
-          // and the agent stays a tree.
-          const parentEdgeId = spanningTree(d).parentEdge.get(nodeId);
-          if (!parentEdgeId) return { ok: false, reason: 'This node has no edge leading to it.' };
-          const edge = d.edges[parentEdgeId];
-          if (edge.sourceId === newParentId) return check;
-          const moved: AgentEdge = {
-            ...edge,
-            sourceId: newParentId,
-            function: uniqueName(edge.function, siblingNames(edge.id)),
-          };
-          set({ draft: { ...d, edges: { ...d.edges, [edge.id]: moved } } });
+          const edges = { ...d.edges, [edgeId]: { ...d.edges[edgeId], targetId: nodeId } };
+          // The edge it hung from is left empty, ready for another node.
+          const oldParent = spanningTree(d).parentEdge.get(nodeId);
+          if (oldParent) edges[oldParent] = { ...d.edges[oldParent], targetId: null };
+          set({ draft: { ...d, edges } });
           return check;
+        },
+
+        attachNodeToNode: (nodeId, parentId) => {
+          const d = get().draft;
+          const check = canAttachNodeToNode(d, nodeId, parentId);
+          if (!check.ok) return check;
+          const edge: AgentEdge = {
+            id: newId(),
+            sourceId: parentId,
+            targetId: nodeId,
+            function: nextName(
+              'edge',
+              Object.values(d.edges)
+                .filter((e) => e.sourceId === parentId)
+                .map((e) => e.function),
+            ),
+            description: '',
+            properties: [],
+          };
+          const edges = { ...d.edges, [edge.id]: edge };
+          const oldParent = spanningTree(d).parentEdge.get(nodeId);
+          if (oldParent) edges[oldParent] = { ...d.edges[oldParent], targetId: null };
+          set({ draft: { ...d, edges }, selection: { kind: 'edge', id: edge.id } });
+          return check;
+        },
+
+        moveEdge: (edgeId, sourceId) => {
+          const d = get().draft;
+          const check = canMoveEdge(d, edgeId, sourceId);
+          if (!check.ok) return check;
+          const edge = d.edges[edgeId];
+          const siblings = Object.values(d.edges)
+            .filter((e) => e.sourceId === sourceId)
+            .map((e) => e.function);
+          const moved: AgentEdge = { ...edge, sourceId, function: uniqueName(edge.function, siblings) };
+          set({ draft: { ...d, edges: { ...d.edges, [edgeId]: moved } } });
+          return check;
+        },
+
+        connectEdge: (edgeId, targetId) => {
+          const d = get().draft;
+          const edge = d.edges[edgeId];
+          if (!edge || edge.targetId || !d.nodes[targetId]) return;
+          set({ draft: { ...d, edges: { ...d.edges, [edgeId]: { ...edge, targetId } } } });
+        },
+
+        linkNodes: (sourceId, targetId) => {
+          const d = get().draft;
+          if (!d.nodes[sourceId] || !d.nodes[targetId]) return;
+          const edge: AgentEdge = {
+            id: newId(),
+            sourceId,
+            targetId,
+            function: nextName(
+              'edge',
+              Object.values(d.edges)
+                .filter((e) => e.sourceId === sourceId)
+                .map((e) => e.function),
+            ),
+            description: '',
+            properties: [],
+          };
+          set({ draft: { ...d, edges: { ...d.edges, [edge.id]: edge } }, selection: { kind: 'edge', id: edge.id } });
         },
 
         deleteNode: (id) => {

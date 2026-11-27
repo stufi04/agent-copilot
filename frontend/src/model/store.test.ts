@@ -109,39 +109,109 @@ describe('updates', () => {
   });
 });
 
-describe('moveNode', () => {
+// Fixture (buildTree):  Greeting ─a→ A ─b→ B
+//                                └c→ C
+describe('attachNodeToEdge', () => {
   const tree = buildTree;
 
-  it('moves the edge the node hangs from, so its subtree follows', () => {
+  it('moves the node (with its subtree) to an empty edge, leaving its old edge empty', () => {
     const { a, A, b, B, C } = tree();
-    expect(actions().moveNode(A, C)).toEqual({ ok: true });
-    expect(draft().edges[a]).toMatchObject({ sourceId: C, targetId: A });
-    expect(draft().edges[b]).toMatchObject({ sourceId: A, targetId: B }); // untouched
-    expect(Object.keys(draft().nodes)).toHaveLength(4);
+    const e = addEdge(C, { function: 'next' });
+    expect(actions().attachNodeToEdge(A, e)).toEqual({ ok: true });
+    expect(draft().edges[e].targetId).toBe(A);
+    expect(draft().edges[a].targetId).toBeNull(); // dangling, ready for another node
+    expect(draft().edges[b]).toMatchObject({ sourceId: A, targetId: B }); // the subtree came along
   });
 
-  it('renames the edge if the new parent already has one with that name', () => {
-    const { a, A, C } = tree();
+  it('refuses edges that already lead somewhere, edges below the node, and the start node', () => {
+    const { g, a, A, b, c } = tree();
+    const below = addEdge(nodeNamed('B').id);
+    const before = draft();
+    expect(actions().attachNodeToEdge(A, c)).toMatchObject({ ok: false, reason: expect.stringContaining('already leads') });
+    expect(actions().attachNodeToEdge(A, a)).toMatchObject({ ok: false, reason: expect.stringContaining('already attached') });
+    expect(actions().attachNodeToEdge(A, below)).toMatchObject({ ok: false, reason: expect.stringContaining('below itself') });
+    expect(actions().attachNodeToEdge(g, addEdge(A))).toMatchObject({ ok: false, reason: expect.stringContaining('start node') });
+    expect(draft().edges[b].targetId).toBe(before.edges[b].targetId);
+  });
+});
+
+describe('attachNodeToNode', () => {
+  const tree = buildTree;
+
+  it('joins the nodes with a new, selected edge; the old edge stays where it was, empty', () => {
+    const { g, a, A, b, B, C } = tree();
+    expect(actions().attachNodeToNode(A, C)).toEqual({ ok: true });
+    const [joined] = edgesFrom(C);
+    expect(joined).toMatchObject({ targetId: A, function: 'edge_1', description: '' });
+    expect(useEditor.getState().selection).toEqual({ kind: 'edge', id: joined.id });
+    expect(draft().edges[a]).toMatchObject({ sourceId: g, targetId: null }); // didn't follow
+    expect(draft().edges[b]).toMatchObject({ sourceId: A, targetId: B }); // the subtree came along
+  });
+
+  it('refuses its current parent, its own subtree and the start node', () => {
+    const { g, A, B, C } = tree();
+    const before = draft();
+    expect(actions().attachNodeToNode(A, g)).toMatchObject({ ok: false, reason: expect.stringContaining('already hangs') });
+    expect(actions().attachNodeToNode(A, B)).toMatchObject({ ok: false, reason: expect.stringContaining('below itself') });
+    expect(actions().attachNodeToNode(A, A)).toMatchObject({ ok: false });
+    expect(actions().attachNodeToNode(g, C)).toMatchObject({ ok: false, reason: expect.stringContaining('start node') });
+    expect(draft()).toBe(before);
+  });
+});
+
+describe('moveEdge', () => {
+  const tree = buildTree;
+
+  it('moves the edge to another node; its target subtree follows', () => {
+    const { a, A, b, B, C } = tree();
+    expect(actions().moveEdge(a, C)).toEqual({ ok: true });
+    expect(draft().edges[a]).toMatchObject({ sourceId: C, targetId: A });
+    expect(draft().edges[b]).toMatchObject({ sourceId: A, targetId: B });
+  });
+
+  it('renames the edge if the new source already has one with that name', () => {
+    const { a, C } = tree();
     addEdge(C, { function: 'a' });
-    actions().moveNode(A, C);
+    actions().moveEdge(a, C);
     expect(draft().edges[a].function).toBe('a_2');
   });
 
-  it('refuses invalid moves and leaves the graph unchanged', () => {
-    const { g, A, B } = tree();
+  it('refuses moving below its own target, or onto its current source', () => {
+    const { g, a, B } = tree();
     const before = draft();
-    expect(actions().moveNode(A, B)).toMatchObject({ ok: false });
-    expect(actions().moveNode(g, A)).toMatchObject({ ok: false });
+    expect(actions().moveEdge(a, B)).toMatchObject({ ok: false, reason: expect.stringContaining('below its own target') });
+    expect(actions().moveEdge(a, g)).toMatchObject({ ok: false });
     expect(draft()).toBe(before);
   });
 
-  it('is a no-op when dropped on its current parent', () => {
-    const { g, A } = tree();
+  it('a link (loop) moves alone, so it can go anywhere', () => {
+    const { g, B } = tree();
+    actions().linkNodes(B, g); // B loops back to the start
+    const loop = edgesFrom(B)[0].id;
+    expect(actions().moveEdge(loop, nodeNamed('C').id)).toEqual({ ok: true });
+  });
+});
+
+describe('connectEdge and linkNodes ([+] dragged onto a node)', () => {
+  it('connectEdge points a dangling edge at an existing node, even back up', () => {
+    const { g, B } = buildTree();
+    const e = addEdge(B, { function: 'again' });
+    actions().connectEdge(e, g);
+    expect(draft().edges[e].targetId).toBe(g);
     const before = draft();
-    expect(actions().moveNode(A, g)).toEqual({ ok: true });
+    actions().connectEdge(e, B); // already has a target: ignored
     expect(draft()).toBe(before);
   });
 
+  it('linkNodes adds a new, selected edge between two nodes, including a node to itself', () => {
+    const { A, C } = buildTree();
+    actions().linkNodes(C, A);
+    const [link] = edgesFrom(C);
+    expect(link).toMatchObject({ sourceId: C, targetId: A, function: 'edge_1', description: '' });
+    expect(useEditor.getState().selection).toEqual({ kind: 'edge', id: link.id });
+    actions().linkNodes(C, C);
+    expect(edgesFrom(C).map((e) => e.targetId)).toEqual([A, C]);
+  });
 });
 
 describe('deleting', () => {

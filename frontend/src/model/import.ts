@@ -8,9 +8,8 @@ import type { AgentDraft, AgentEdge, AgentNode, EdgeProperty, Id, PropertyType }
 // - Warnings describe anything dropped or changed on the way in, so a later export
 //   won't silently differ from the file.
 //
-// The editor builds trees (each node is created from one edge, and dragging a node
-// moves it with that edge), so the agent must be one: every node except the start is
-// the target of exactly one edge and reachable from the start. No loops.
+// Loops and nodes reached by several edges are fine. Every node must be reachable
+// from the start node, as in the editor.
 
 export type ImportResult =
   | { ok: true; draft: AgentDraft; warnings: string[] }
@@ -143,8 +142,8 @@ export function importAgentData(data: unknown): ImportResult {
     edges,
   };
 
-  const shapeErrors = checkTreeShape(draft);
-  if (shapeErrors.length) return { ok: false, errors: shapeErrors };
+  const cut = disconnected(draft);
+  if (cut.length) return { ok: false, errors: [`Not connected to the start node: ${cut.join(', ')}.`] };
   return { ok: true, draft, warnings };
 }
 
@@ -223,23 +222,8 @@ function importEdge(
   };
 }
 
-/** The editor can only show trees rooted at the start node; explain anything else. */
-function checkTreeShape(d: AgentDraft): string[] {
-  const errors: string[] = [];
-  const nameOf = (id: Id) => d.nodes[id].name;
-  const incoming = new Map<Id, string[]>();
-  for (const e of Object.values(d.edges)) {
-    incoming.set(e.targetId!, [...(incoming.get(e.targetId!) ?? []), `"${e.function}" from "${nameOf(e.sourceId)}"`]);
-  }
-
-  const start = incoming.get(d.initialNodeId);
-  if (start) errors.push(`The start node "${nameOf(d.initialNodeId)}" has incoming edges (${start.join(', ')}). Loops back to the start aren't supported yet.`);
-  for (const [id, from] of incoming) {
-    if (id !== d.initialNodeId && from.length > 1)
-      errors.push(`Node "${nameOf(id)}" is the target of ${from.length} edges (${from.join(', ')}). Shared nodes and loops aren't supported yet.`);
-  }
-
-  // With one parent per node, anything not reachable from the start is a separate part or a cycle.
+/** Names (quoted) of nodes not reachable from the start node. */
+function disconnected(d: AgentDraft): string[] {
   const reachable = new Set<Id>();
   const queue = [d.initialNodeId];
   while (queue.length) {
@@ -248,10 +232,7 @@ function checkTreeShape(d: AgentDraft): string[] {
     reachable.add(id);
     for (const e of Object.values(d.edges)) if (e.sourceId === id) queue.push(e.targetId!);
   }
-  const cut = Object.keys(d.nodes).filter((id) => !reachable.has(id));
-  if (cut.length && !errors.length)
-    errors.push(`Not connected to the start node: ${cut.map((id) => `"${nameOf(id)}"`).join(', ')}.`);
-
-  if (errors.length) errors.push('The editor currently supports tree-shaped agents only: every node except the start is reached by exactly one edge.');
-  return errors;
+  return Object.keys(d.nodes)
+    .filter((id) => !reachable.has(id))
+    .map((id) => `"${d.nodes[id].name}"`);
 }
