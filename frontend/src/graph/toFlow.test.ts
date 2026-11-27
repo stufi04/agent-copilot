@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actions, addEdge, addNode, draft } from '../test/helpers';
+import { actions, addEdge, addNode, buildTree, draft } from '../test/helpers';
 import type { AgentDraft } from '../model/types';
 import { NODE_H, NODE_W, PILL_W, toFlow, type FlowNode } from './toFlow';
 
@@ -112,8 +112,8 @@ describe('toFlow: layout', () => {
 });
 
 describe('toFlow: graphs that are not trees', () => {
-  // The editor only builds trees, but a saved agent can come from elsewhere (e.g. a loop
-  // made on another branch). Laying it out must not hang or crash the page.
+  // The editor can't make loops or shared nodes, but a malformed saved draft might
+  // have them. Laying it out must not hang or crash the page.
   it('lays out a loop back to the start without recursing forever', () => {
     const d = draft();
     const g = d.initialNodeId;
@@ -132,6 +132,37 @@ describe('toFlow: graphs that are not trees', () => {
     expect(pos('c').y).toBeGreaterThan(pos(g).y); // placed once, below the start, under its first edge
     expect(pos('e2').y).toBeGreaterThan(pos('c').y);
     expect(edges.map((e) => e.id)).toEqual(expect.arrayContaining(['e2->' + g, 'e3->c']));
+  });
+});
+
+describe('toFlow: drag & drop', () => {
+  it('only nodes other than the start are draggable; edge pills never are', () => {
+    const { g, a, A } = buildTree();
+    const { nodes } = flow();
+    expect(byId(nodes, g).draggable).toBe(false);
+    expect(byId(nodes, A).draggable).toBe(true);
+    expect(byId(nodes, a).draggable).toBe(false);
+  });
+
+  it('marks the node under a drag as a valid or invalid drop target', () => {
+    const { A, C } = buildTree();
+    const valid = toFlow(draft(), null, new Set(), { nodeId: C, state: 'valid' });
+    expect(byId(valid.nodes, C).data).toMatchObject({ drop: 'valid' });
+    expect(byId(valid.nodes, A).data).toMatchObject({ drop: null });
+    const invalid = toFlow(draft(), null, new Set(), { nodeId: C, state: 'invalid' });
+    expect(byId(invalid.nodes, C).data).toMatchObject({ drop: 'invalid' });
+  });
+});
+
+describe('toFlow: element sizes', () => {
+  // Regression: without `measured`, React Flow drops a node's connection points each time
+  // it gets a new node object, so the connector lines disappeared while dragging.
+  it('every element declares its fixed size as measured, so its lines stay drawn', () => {
+    buildTree();
+    for (const n of flow().nodes) {
+      expect(n.measured).toEqual({ width: n.width, height: n.height });
+      expect(n.width).toBe(n.type === 'agentNode' ? NODE_W : PILL_W);
+    }
   });
 });
 

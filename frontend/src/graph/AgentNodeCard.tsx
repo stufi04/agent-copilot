@@ -6,7 +6,12 @@ import { PlusButton } from './PlusButton';
 
 export const AgentNodeCard = memo(function AgentNodeCard({ id, data }: NodeProps<AgentFlowNode>) {
   const addEdge = useEditor((s) => s.addEdge);
-  const classes = ['agent-node', data.selected && 'is-selected', data.hasError && 'has-error']
+  const classes = [
+    'agent-node',
+    data.selected && 'is-selected',
+    data.hasError && 'has-error',
+    data.drop && `drop-${data.drop}`,
+  ]
     .filter(Boolean)
     .join(' ');
 

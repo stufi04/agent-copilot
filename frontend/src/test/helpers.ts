@@ -14,6 +14,16 @@ export function edgesFrom(nodeId: Id): AgentEdge[] {
   return Object.values(draft().edges).filter((e) => e.sourceId === nodeId);
 }
 
+/**
+ * Points an edge at a node by writing the draft directly. The editor can't do this
+ * (it only builds trees); it's for checking that malformed drafts, e.g. an old save,
+ * with loops or shared nodes are handled without hanging.
+ */
+export function forceTarget(edgeId: Id, nodeId: Id) {
+  const d = draft();
+  useEditor.setState({ draft: { ...d, edges: { ...d.edges, [edgeId]: { ...d.edges[edgeId], targetId: nodeId } } } });
+}
+
 /** The id of the edge most recently added (addEdge selects it). */
 function selectedId(): Id {
   const sel = useEditor.getState().selection;
@@ -44,6 +54,23 @@ export function addField(
   actions().addProperty(edgeId);
   const props = draft().edges[edgeId].properties;
   actions().updateProperty(edgeId, props[props.length - 1].id, { enumText: '', required: true, ...field });
+}
+
+/**
+ * A small fixture graph, built through store actions:
+ *
+ *   Greeting ─a→ A ─b→ B
+ *            └c→ C
+ */
+export function buildTree() {
+  const g = draft().initialNodeId;
+  const a = addEdge(g, { function: 'a' });
+  const A = addNode(a, { name: 'A' });
+  const b = addEdge(A, { function: 'b' });
+  const B = addNode(b, { name: 'B' });
+  const c = addEdge(g, { function: 'c' });
+  const C = addNode(c, { name: 'C' });
+  return { g, a, A, b, B, c, C };
 }
 
 /** Recreates backend/example_flow.json entirely through store actions, as a user would in the UI. */

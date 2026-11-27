@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { canMoveNode, nodesRemovedBy, spanningTree, type MoveCheck } from './graph';
 import type { AgentDraft, AgentEdge, AgentNode, EdgeProperty, Id, Selection } from './types';
 
 // Defaults mirror backend/agent_builder/schema.py and example_flow.json.
@@ -37,19 +38,13 @@ function nextName(prefix: string, taken: Iterable<string>): string {
   return `${prefix}_${n}`;
 }
 
-/** The node plus everything reachable below it through outgoing edges. */
-export function subtreeNodeIds(draft: AgentDraft, rootId: Id): Set<Id> {
-  const seen = new Set<Id>();
-  const stack = [rootId];
-  while (stack.length) {
-    const id = stack.pop()!;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    for (const e of Object.values(draft.edges)) {
-      if (e.sourceId === id && e.targetId) stack.push(e.targetId);
-    }
-  }
-  return seen;
+/** `name` if free, otherwise `${name}_2`, `${name}_3`, ... */
+function uniqueName(name: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  if (!used.has(name)) return name;
+  let n = 2;
+  while (used.has(`${name}_${n}`)) n++;
+  return `${name}_${n}`;
 }
 
 /** Remove the given nodes, their outgoing edges, and detach edges pointing at them. */
@@ -63,9 +58,41 @@ function removeNodes(draft: AgentDraft, ids: Set<Id>): Pick<AgentDraft, 'nodes' 
   return { nodes, edges };
 }
 
+// ---- undo history ----
+// Each change that touches the agent saves the version before it. Typing is merged:
+// consecutive edits to the same text field become one step, until you switch fields
+// or pause for MERGE_MS. History lives in memory only; a reload starts it afresh.
+export const HISTORY_LIMIT = 100;
+export const MERGE_MS = 1000;
+
+/** Text edits merge into one undo step; toggles and other values never do. */
+const mergeKey = (scope: string, patch: object): string | undefined =>
+  Object.values(patch).every((v) => typeof v === 'string') ? `${scope}:${Object.keys(patch).sort().join()}` : undefined;
+
+/**
+ * Selection after jumping to another version: select what came back (prefer a node),
+ * drop a selection that no longer exists, otherwise keep it.
+ */
+function selectionAfter(selection: Selection, to: AgentDraft, from: AgentDraft): Selection {
+  const restoredNode = Object.keys(to.nodes).find((id) => !from.nodes[id]);
+  if (restoredNode) return { kind: 'node', id: restoredNode };
+  const restoredEdge = Object.keys(to.edges).find((id) => !from.edges[id]);
+  if (restoredEdge) return { kind: 'edge', id: restoredEdge };
+  if (selection?.kind === 'node' && !to.nodes[selection.id]) return null;
+  if (selection?.kind === 'edge' && !to.edges[selection.id]) return null;
+  return selection;
+}
+
 interface EditorState {
   draft: AgentDraft;
   selection: Selection;
+  /** Earlier versions of the draft, oldest first. */
+  past: AgentDraft[];
+  /** Undone versions, next to redo first. */
+  future: AgentDraft[];
+
+  undo: () => void;
+  redo: () => void;
 
   select: (selection: Selection) => void;
   updateAgent: (patch: Partial<Pick<AgentDraft, 'name' | 'persona' | 'voiceId' | 'model'>>) => void;
@@ -76,6 +103,8 @@ interface EditorState {
   addProperty: (edgeId: Id) => void;
   updateProperty: (edgeId: Id, propId: Id, patch: Partial<Omit<EdgeProperty, 'id'>>) => void;
   removeProperty: (edgeId: Id, propId: Id) => void;
+  /** Drag a node onto another node: it moves there with its whole subtree. */
+  moveNode: (nodeId: Id, newParentId: Id) => MoveCheck;
   deleteNode: (id: Id) => void;
   deleteEdge: (id: Id) => void;
   /** Replace the whole agent, e.g. with an imported one. */
@@ -85,25 +114,76 @@ interface EditorState {
 
 export const useEditor = create<EditorState>()(
   persist(
-    (set, get) => {
-      const setDraft = (fn: (d: AgentDraft) => Partial<AgentDraft>) =>
-        set((s) => ({ draft: { ...s.draft, ...fn(s.draft) } }));
+    (rawSet, get) => {
+      let lastKey: string | undefined;
+      let lastAt = 0;
 
-      const patchEdge = (id: Id, fn: (e: AgentEdge) => AgentEdge) =>
-        setDraft((d) => (d.edges[id] ? { edges: { ...d.edges, [id]: fn(d.edges[id]) } } : {}));
+      /** Apply a change; if it touches the draft, record the previous version for undo. */
+      const set = (
+        update: Partial<EditorState> | ((s: EditorState) => Partial<EditorState>),
+        key?: string,
+      ) =>
+        rawSet((s) => {
+          const next = typeof update === 'function' ? update(s) : update;
+          if (!next.draft || next.draft === s.draft) return next;
+          const now = Date.now();
+          const merge = key !== undefined && key === lastKey && now - lastAt < MERGE_MS && s.past.length > 0;
+          lastKey = key;
+          lastAt = now;
+          return { ...next, past: merge ? s.past : [...s.past, s.draft].slice(-HISTORY_LIMIT), future: [] };
+        });
+
+      const setDraft = (fn: (d: AgentDraft) => Partial<AgentDraft>, key?: string) =>
+        set((s) => ({ draft: { ...s.draft, ...fn(s.draft) } }), key);
+
+      const patchEdge = (id: Id, fn: (e: AgentEdge) => AgentEdge, key?: string) =>
+        setDraft((d) => (d.edges[id] ? { edges: { ...d.edges, [id]: fn(d.edges[id]) } } : {}), key);
 
       return {
         draft: initialDraft(),
         selection: null,
+        past: [],
+        future: [],
+
+        undo: () => {
+          lastKey = undefined; // the next edit starts a new step
+          rawSet((s) => {
+            const prev = s.past.at(-1);
+            if (!prev) return {};
+            return {
+              draft: prev,
+              past: s.past.slice(0, -1),
+              future: [s.draft, ...s.future],
+              selection: selectionAfter(s.selection, prev, s.draft),
+            };
+          });
+        },
+
+        redo: () => {
+          lastKey = undefined;
+          rawSet((s) => {
+            const next = s.future[0];
+            if (!next) return {};
+            return {
+              draft: next,
+              past: [...s.past, s.draft],
+              future: s.future.slice(1),
+              selection: selectionAfter(s.selection, next, s.draft),
+            };
+          });
+        },
 
         select: (selection) => set({ selection }),
 
-        updateAgent: (patch) => setDraft(() => patch),
+        updateAgent: (patch) => setDraft(() => patch, mergeKey('agent', patch)),
 
         updateNode: (id, patch) =>
-          setDraft((d) => (d.nodes[id] ? { nodes: { ...d.nodes, [id]: { ...d.nodes[id], ...patch } } } : {})),
+          setDraft(
+            (d) => (d.nodes[id] ? { nodes: { ...d.nodes, [id]: { ...d.nodes[id], ...patch } } } : {}),
+            mergeKey(`node:${id}`, patch),
+          ),
 
-        updateEdge: (id, patch) => patchEdge(id, (e) => ({ ...e, ...patch })),
+        updateEdge: (id, patch) => patchEdge(id, (e) => ({ ...e, ...patch }), mergeKey(`edge:${id}`, patch)),
 
         addEdge: (sourceNodeId) => {
           const d = get().draft;
@@ -156,26 +236,51 @@ export const useEditor = create<EditorState>()(
           })),
 
         updateProperty: (edgeId, propId, patch) =>
-          patchEdge(edgeId, (e) => ({
-            ...e,
-            properties: e.properties.map((p) => (p.id === propId ? { ...p, ...patch } : p)),
-          })),
+          patchEdge(
+            edgeId,
+            (e) => ({ ...e, properties: e.properties.map((p) => (p.id === propId ? { ...p, ...patch } : p)) }),
+            mergeKey(`property:${propId}`, patch),
+          ),
 
         removeProperty: (edgeId, propId) =>
           patchEdge(edgeId, (e) => ({ ...e, properties: e.properties.filter((p) => p.id !== propId) })),
 
+        moveNode: (nodeId, newParentId) => {
+          const d = get().draft;
+          const check = canMoveNode(d, nodeId, newParentId);
+          if (!check.ok) return check;
+
+          const siblingNames = (except: Id) =>
+            Object.values(d.edges)
+              .filter((e) => e.sourceId === newParentId && e.id !== except)
+              .map((e) => e.function);
+
+          // The node moves along the edge it hangs from, so the subtree comes with it
+          // and the agent stays a tree.
+          const parentEdgeId = spanningTree(d).parentEdge.get(nodeId);
+          if (!parentEdgeId) return { ok: false, reason: 'This node has no edge leading to it.' };
+          const edge = d.edges[parentEdgeId];
+          if (edge.sourceId === newParentId) return check;
+          const moved: AgentEdge = {
+            ...edge,
+            sourceId: newParentId,
+            function: uniqueName(edge.function, siblingNames(edge.id)),
+          };
+          set({ draft: { ...d, edges: { ...d.edges, [edge.id]: moved } } });
+          return check;
+        },
+
         deleteNode: (id) => {
           const d = get().draft;
           if (id === d.initialNodeId || !d.nodes[id]) return;
-          set({ draft: { ...d, ...removeNodes(d, subtreeNodeIds(d, id)) }, selection: null });
+          set({ draft: { ...d, ...removeNodes(d, nodesRemovedBy(d, { kind: 'node', id })) }, selection: null });
         },
 
         deleteEdge: (id) => {
           const d = get().draft;
-          const edge = d.edges[id];
-          if (!edge) return;
-          // The edge's target subtree would be unreachable without it, so it goes too.
-          const removed = edge.targetId ? removeNodes(d, subtreeNodeIds(d, edge.targetId)) : d;
+          if (!d.edges[id]) return;
+          // Nodes only this edge connected to the start node go with it.
+          const removed = removeNodes(d, nodesRemovedBy(d, { kind: 'edge', id }));
           const edges = { ...removed.edges };
           delete edges[id];
           set({ draft: { ...d, nodes: removed.nodes, edges }, selection: null });

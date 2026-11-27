@@ -108,6 +108,14 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .agent-node.has-error, .edge-pill.has-error { border-color: var(--error); }
 .agent-node.is-selected, .edge-pill.is-selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
+/* ---- drag & drop ---- */
+.react-flow__node.draggable .agent-node { cursor: grab; }
+.react-flow__node.is-dragging { opacity: 0.8; }
+.react-flow__node.is-dragging .agent-node, .react-flow__node.is-dragging .edge-pill { cursor: grabbing; box-shadow: 0 8px 20px rgb(0 0 0 / 0.15); }
+.react-flow__node.is-dragging .plus-slot { display: none; }
+.agent-node.drop-valid { border-color: var(--ok); box-shadow: 0 0 0 4px rgb(47 158 68 / 0.25); }
+.agent-node.drop-invalid { border-color: var(--error); box-shadow: 0 0 0 4px rgb(214 51 108 / 0.2); cursor: not-allowed; }
+
 /* ---- [+] under a hovered element ---- */
 .plus-slot {
   position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
@@ -186,3 +194,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent-soft
 .notice__sub { margin: 6px 0 0; color: var(--muted); }
 .notice ul { margin: 6px 0 0; padding-left: 18px; }
 .notice li + li { margin-top: 4px; }
+
+/* ---- undo / redo ---- */
+.undo-redo { display: flex; gap: 4px; margin-right: 4px; }
+.btn--icon { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; padding-inline: 8px; }

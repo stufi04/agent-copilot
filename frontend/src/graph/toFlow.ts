@@ -1,17 +1,30 @@
 import { MarkerType, type Edge, type Node } from '@xyflow/react';
+import { spanningTree, type SpanningTree } from '../model/graph';
 import type { AgentDraft, Id, Selection } from '../model/types';
 
-// Projects the domain model onto React Flow and lays it out as a top-down tree.
+// Projects the domain model onto React Flow and lays it out top-down.
 //
 // Agent edges are drawn as their own React Flow *nodes* (a pill with the function
-// name), not as React Flow edges: they must be clickable and hoverable and carry
-// a [+], including while dangling (no target yet), which a React Flow edge can't
-// represent. The lines on screen are plain connectors: source -> pill -> target.
+// name), not as React Flow edges: they must be clickable, hoverable and draggable
+// and carry a [+], including while dangling (no target yet), which a React Flow
+// edge can't represent. The lines on screen are plain connectors: source -> pill -> target.
+//
+// The editor only builds trees: every node except the start hangs under exactly one
+// edge, and there are no loops (see model/graph.ts). The layout still walks a spanning
+// tree rather than trusting that, so a malformed saved draft can't hang the page.
 
+// SIZED: every element has a fixed size and says so in `measured`. React Flow rebuilds
+// its record of a node whenever it gets a new node object (every drag frame, every
+// layout change), and only keeps the node's measured connection points if `measured`
+// is set. Without it, the lines to that node vanish until the DOM is measured again,
+// which during a drag means they flicker or disappear entirely.
 export const NODE_W = 200;
 export const NODE_H = 64;
 export const PILL_W = 170;
 export const PILL_H = 34;
+
+/** Drop feedback while something is dragged over this node. */
+export type DropState = 'valid' | 'invalid' | null;
 
 export type AgentNodeData = {
   name: string;
@@ -19,6 +32,7 @@ export type AgentNodeData = {
   isEnd: boolean;
   selected: boolean;
   hasError: boolean;
+  drop: DropState;
 };
 export type EdgePillData = {
   label: string;
@@ -34,9 +48,11 @@ export function toFlow(
   draft: AgentDraft,
   selection: Selection,
   errored: Set<Id>,
+  drop: { nodeId: Id; state: Exclude<DropState, null> } | null = null,
 ): { nodes: FlowNode[]; edges: Edge[] } {
   const isSelected = (kind: 'node' | 'edge', id: Id) =>
     selection?.kind === kind && selection.id === id;
+  const tree = spanningTree(draft);
 
   const nodes: FlowNode[] = [];
   const edges: Edge[] = [];
@@ -48,12 +64,16 @@ export function toFlow(
       position: { x: 0, y: 0 },
       width: NODE_W,
       height: NODE_H,
+      measured: { width: NODE_W, height: NODE_H }, // see SIZED below
+      // The start node is the root of everything, so it can't be dragged anywhere.
+      draggable: n.id !== draft.initialNodeId,
       data: {
         name: n.name.trim() || 'Untitled node',
         isStart: n.id === draft.initialNodeId,
         isEnd: n.end,
         selected: isSelected('node', n.id),
         hasError: errored.has(n.id),
+        drop: drop?.nodeId === n.id ? drop.state : null,
       },
     });
   }
@@ -65,6 +85,9 @@ export function toFlow(
       position: { x: 0, y: 0 },
       width: PILL_W,
       height: PILL_H,
+      measured: { width: PILL_W, height: PILL_H }, // see SIZED below
+      // An edge always stays with the node it comes out of; it moves when that node does.
+      draggable: false,
       data: {
         label: e.function.trim() || 'unnamed_edge',
         dangling: !e.targetId,
@@ -83,44 +106,24 @@ export function toFlow(
     }
   }
 
-  return { nodes: layoutTree(draft, nodes), edges };
+  return { nodes: layoutTree(draft, tree, nodes), edges };
 }
 
 const H_GAP = 36; // horizontal gap between sibling subtrees
 const V_GAP = 44; // vertical gap between a node and its edge pills (and pill -> target)
 
 /**
- * Tidy tree layout. The editor only ever creates nodes from an edge's [+], so the
- * graph is a tree rooted at the initial node: each node's edges fan out beneath it
+ * Tidy tree layout along the spanning tree: each node's edges fan out beneath it
  * in creation order with equal gaps, and each parent is centred over its children.
+ * The start node's tree comes first; anything else (only in a malformed draft) goes to its right.
  */
-function layoutTree(draft: AgentDraft, nodes: FlowNode[]): FlowNode[] {
+function layoutTree(draft: AgentDraft, tree: SpanningTree, nodes: FlowNode[]): FlowNode[] {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const edges = Object.values(draft.edges);
 
-  // Each node is placed once, under the first edge that reaches it (breadth-first from the
-  // start, then from anything left over). A saved agent may contain loops or shared nodes
-  // (e.g. one made on another branch); without this the layout would recurse forever.
-  const parentEdge = new Map<Id, Id>();
-  const seen = new Set<Id>();
-  for (const root of [draft.initialNodeId, ...Object.keys(draft.nodes)]) {
-    if (seen.has(root) || !byId.has(root)) continue;
-    seen.add(root);
-    const queue = [root];
-    while (queue.length) {
-      const id = queue.shift()!;
-      for (const e of edges) {
-        if (e.sourceId !== id || !e.targetId || seen.has(e.targetId) || !byId.has(e.targetId)) continue;
-        seen.add(e.targetId);
-        parentEdge.set(e.targetId, e.id);
-        queue.push(e.targetId);
-      }
-    }
-  }
-
   const children = (id: Id): Id[] => {
     const edge = draft.edges[id];
-    if (edge) return edge.targetId && parentEdge.get(edge.targetId) === id ? [edge.targetId] : [];
+    if (edge) return edge.targetId && tree.parentEdge.get(edge.targetId) === id ? [edge.targetId] : [];
     return edges.filter((e) => e.sourceId === id).map((e) => e.id);
   };
 
@@ -147,13 +150,11 @@ function layoutTree(draft: AgentDraft, nodes: FlowNode[]): FlowNode[] {
     }
   };
 
-  // The initial node is the root. Anything unreachable gets laid out to its right.
   let left = 0;
-  for (const root of [draft.initialNodeId, ...Object.keys(draft.nodes)]) {
-    if (positions.has(root) || !byId.has(root)) continue;
+  for (const root of tree.roots) {
     const w = subtreeWidth(root);
     place(root, left, 0);
-    left += w + H_GAP * 2;
+    left += w + H_GAP * 3;
   }
   return nodes.map((n) => ({ ...n, position: positions.get(n.id) ?? { x: 0, y: 0 } }));
 }

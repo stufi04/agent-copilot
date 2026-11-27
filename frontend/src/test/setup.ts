@@ -24,6 +24,7 @@ globalThis.DOMMatrixReadOnly ??= DOMMatrixReadOnlyStub as unknown as typeof DOMM
 beforeEach(() => {
   localStorage.clear();
   useEditor.getState().reset();
+  useEditor.setState({ past: [], future: [] });
 });
 
 afterEach(() => {

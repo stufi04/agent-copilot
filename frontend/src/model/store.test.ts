@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { actions, addEdge, addNode, draft, edgesFrom, nodeNamed } from '../test/helpers';
-import { subtreeNodeIds, useEditor } from './store';
+import { actions, addEdge, addNode, buildTree, draft, edgesFrom, nodeNamed } from '../test/helpers';
+import { useEditor } from './store';
 
 describe('initial state', () => {
   it('starts with a single Greeting node as the initial node', () => {
@@ -109,25 +109,43 @@ describe('updates', () => {
   });
 });
 
-describe('deleting', () => {
-  // Greeting -> a -> A -> b -> B
-  //          -> c -> C
-  function tree() {
-    const g = draft().initialNodeId;
-    const a = addEdge(g, { function: 'a' });
-    const A = addNode(a, { name: 'A' });
-    const b = addEdge(A, { function: 'b' });
-    const B = addNode(b, { name: 'B' });
-    const c = addEdge(g, { function: 'c' });
-    const C = addNode(c, { name: 'C' });
-    return { g, a, A, b, B, c, C };
-  }
+describe('moveNode', () => {
+  const tree = buildTree;
 
-  it('subtreeNodeIds returns the node and everything below it', () => {
-    const { g, A, B, C } = tree();
-    expect(subtreeNodeIds(draft(), A)).toEqual(new Set([A, B]));
-    expect(subtreeNodeIds(draft(), g)).toEqual(new Set([g, A, B, C]));
+  it('moves the edge the node hangs from, so its subtree follows', () => {
+    const { a, A, b, B, C } = tree();
+    expect(actions().moveNode(A, C)).toEqual({ ok: true });
+    expect(draft().edges[a]).toMatchObject({ sourceId: C, targetId: A });
+    expect(draft().edges[b]).toMatchObject({ sourceId: A, targetId: B }); // untouched
+    expect(Object.keys(draft().nodes)).toHaveLength(4);
   });
+
+  it('renames the edge if the new parent already has one with that name', () => {
+    const { a, A, C } = tree();
+    addEdge(C, { function: 'a' });
+    actions().moveNode(A, C);
+    expect(draft().edges[a].function).toBe('a_2');
+  });
+
+  it('refuses invalid moves and leaves the graph unchanged', () => {
+    const { g, A, B } = tree();
+    const before = draft();
+    expect(actions().moveNode(A, B)).toMatchObject({ ok: false });
+    expect(actions().moveNode(g, A)).toMatchObject({ ok: false });
+    expect(draft()).toBe(before);
+  });
+
+  it('is a no-op when dropped on its current parent', () => {
+    const { g, A } = tree();
+    const before = draft();
+    expect(actions().moveNode(A, g)).toEqual({ ok: true });
+    expect(draft()).toBe(before);
+  });
+
+});
+
+describe('deleting', () => {
+  const tree = buildTree;
 
   it('deleteNode removes the subtree and detaches the edge that led to it', () => {
     const { a, A, b, B, C } = tree();
