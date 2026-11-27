@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import newAgent from '../e2e/fixtures/new_agent.json';
 import App from './App';
 import { buildExampleFlow, draft } from './test/helpers';
 
@@ -189,4 +190,78 @@ describe('App', () => {
     expect(document.querySelectorAll('.edge-pill')).toHaveLength(0);
     expect(graphNode('Greeting')).toBeInTheDocument();
   });
+
+  describe('Import JSON', () => {
+    const jsonFile = (data: unknown, name = 'agent.json') =>
+      new File([typeof data === 'string' ? data : JSON.stringify(data)], name, { type: 'application/json' });
+    const fileInput = () => screen.getByLabelText('Import agent JSON file');
+
+    it('sits next to Export and builds the graph from the file', async () => {
+      const { user } = setup();
+      const buttons = screen.getAllByRole('button').map((b) => b.textContent);
+      expect(buttons.indexOf('Import JSON')).toBe(buttons.indexOf('Export JSON') - 1);
+
+      await user.upload(fileInput(), jsonFile(newAgent, 'new_agent.json'));
+
+      for (const name of ['Greeting', 'Collect Details', 'Offer Times', 'Confirm']) expect(graphNode(name)).toBeInTheDocument();
+      for (const fn of ['choose_intent', 'record_details', 'select_time']) expect(graphPill(fn)).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('Imported "New agent": 4 nodes, 3 edges.');
+      expect(screen.getByRole('button', { name: '✓ Valid' })).toBeInTheDocument();
+    });
+
+    it('the imported agent is fully editable', async () => {
+      const { user } = setup();
+      await user.upload(fileInput(), jsonFile(newAgent));
+      canvasClick(graphPill('select_time'));
+      expect(screen.getByLabelText(/^Function name/)).toHaveValue('select_time');
+      expect(screen.getByPlaceholderText(/allowed values/)).toHaveValue('Tuesday 10 AM, Thursday 2 PM');
+      const confirmCard = graphNode('Confirm').closest('.agent-node') as HTMLElement;
+      canvasClick(within(confirmCard).getByRole('button', { name: 'Add an edge' })); // [+] works on imported nodes
+      expect(document.querySelectorAll('.edge-pill')).toHaveLength(4);
+    });
+
+    it('asks before replacing an agent with work in it, and keeps it if you cancel', async () => {
+      const { user } = setup();
+      plus('Add an edge');
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+      await user.upload(fileInput(), jsonFile(newAgent, 'new_agent.json'));
+      expect(confirm).toHaveBeenCalledWith('Replace "New agent" with the agent from new_agent.json?');
+      expect(graphPill('edge_1')).toBeInTheDocument();
+      expect(screen.queryByText('Collect Details')).toBeNull();
+
+      confirm.mockReturnValue(true);
+      await user.upload(fileInput(), jsonFile(newAgent, 'new_agent.json'));
+      expect(graphNode('Collect Details')).toBeInTheDocument();
+      expect(screen.queryByText('edge_1')).toBeNull();
+    });
+
+    it('does not ask when the current agent is still blank', async () => {
+      const { user } = setup();
+      const confirm = vi.spyOn(window, 'confirm');
+      await user.upload(fileInput(), jsonFile(newAgent));
+      expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('shows why a file was rejected and leaves the graph alone', async () => {
+      const { user } = setup();
+      await user.upload(fileInput(), jsonFile('{ not json', 'broken.json'));
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveTextContent("Couldn't import broken.json");
+      expect(alert).toHaveTextContent('Not valid JSON');
+      expect(graphNode('Greeting')).toBeInTheDocument();
+
+      await user.click(within(alert).getByRole('button', { name: 'Dismiss' }));
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('lists warnings for anything changed on the way in', async () => {
+      const { user } = setup();
+      const withExtras = structuredClone(newAgent) as typeof newAgent & { nodes: Record<string, unknown>[] };
+      withExtras.nodes[0].pre_actions = [{ type: 'tts_say', text: 'Hello!' }];
+      await user.upload(fileInput(), jsonFile(withExtras));
+      expect(screen.getByRole('status')).toHaveTextContent('"pre_actions" isn\'t supported by the editor yet and was dropped.');
+    });
+  });
 });
+

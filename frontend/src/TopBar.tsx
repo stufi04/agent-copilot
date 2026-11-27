@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ImportButton } from './ImportButton';
 import { downloadJson, exportAgent } from './model/export';
 import { useEditor } from './model/store';
 import type { Issue } from './model/validate';
@@ -62,6 +63,7 @@ export function TopBar({ issues }: { issues: Issue[] }) {
         <button type="button" className="btn" onClick={() => select({ kind: 'agent' })}>
           Agent settings
         </button>
+        <ImportButton />
         <button
           type="button"
           className="btn btn--primary"

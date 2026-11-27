@@ -78,6 +78,8 @@ interface EditorState {
   removeProperty: (edgeId: Id, propId: Id) => void;
   deleteNode: (id: Id) => void;
   deleteEdge: (id: Id) => void;
+  /** Replace the whole agent, e.g. with an imported one. */
+  loadDraft: (draft: AgentDraft) => void;
   reset: () => void;
 }
 
@@ -178,6 +180,8 @@ export const useEditor = create<EditorState>()(
           delete edges[id];
           set({ draft: { ...d, nodes: removed.nodes, edges }, selection: null });
         },
+
+        loadDraft: (draft) => set({ draft, selection: null }),
 
         reset: () => set({ draft: initialDraft(), selection: null }),
       };
