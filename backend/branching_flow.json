@@ -1,0 +1,200 @@
+{
+  "name": "Clinic Front Desk",
+  "voice_id": "21m00Tcm4TlvDq8ikWAM",
+  "model": "gpt-4o",
+  "persona": "You are a warm, efficient front-desk assistant for a healthcare clinic. Your responses are spoken aloud, so avoid emojis, lists, or anything that can't be read out. Keep replies to one or two short sentences. Always use an available function to move the conversation forward.",
+  "initial_node": "greeting",
+  "nodes": [
+    {
+      "name": "greeting",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Greet the caller, say you're the clinic's front-desk assistant, and ask whether they'd like to book a new appointment, reschedule one, or cancel one. Take the function that matches what they say; if it's unclear, ask again."
+        }
+      ],
+      "edges": [
+        {
+          "function": "book_appointment",
+          "description": "The caller wants to book a new appointment.",
+          "target": "collect_details",
+          "properties": {},
+          "required": []
+        },
+        {
+          "function": "reschedule_appointment",
+          "description": "The caller wants to move an appointment they already have to a different time.",
+          "target": "find_appointment_to_move",
+          "properties": {},
+          "required": []
+        },
+        {
+          "function": "cancel_appointment",
+          "description": "The caller wants to cancel an appointment they already have.",
+          "target": "find_appointment_to_cancel",
+          "properties": {},
+          "required": []
+        }
+      ]
+    },
+    {
+      "name": "collect_details",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Collect the caller's full name and the reason for the visit. Ask for whatever is still missing, one question at a time."
+        }
+      ],
+      "edges": [
+        {
+          "function": "record_details",
+          "description": "Record the caller's name and reason once both are known.",
+          "target": "offer_times",
+          "properties": {
+            "full_name": {"type": "string", "description": "Caller's full name."},
+            "reason": {"type": "string", "description": "Reason for the visit."}
+          },
+          "required": ["full_name", "reason"]
+        }
+      ]
+    },
+    {
+      "name": "find_appointment_to_move",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Ask for the caller's full name and the date of the appointment they want to move, one question at a time."
+        }
+      ],
+      "edges": [
+        {
+          "function": "record_appointment_to_move",
+          "description": "Record the caller's name and current appointment date once both are known.",
+          "target": "offer_times",
+          "properties": {
+            "full_name": {"type": "string", "description": "Caller's full name."},
+            "current_date": {"type": "string", "description": "Date of the appointment being moved."}
+          },
+          "required": ["full_name", "current_date"]
+        }
+      ]
+    },
+    {
+      "name": "find_appointment_to_cancel",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Ask for the caller's full name and the date of the appointment they want to cancel, one question at a time."
+        }
+      ],
+      "edges": [
+        {
+          "function": "record_appointment_to_cancel",
+          "description": "Record the caller's name and the appointment date once both are known.",
+          "target": "confirm_cancellation",
+          "properties": {
+            "full_name": {"type": "string", "description": "Caller's full name."},
+            "appointment_date": {"type": "string", "description": "Date of the appointment to cancel."}
+          },
+          "required": ["full_name", "appointment_date"]
+        }
+      ]
+    },
+    {
+      "name": "offer_times",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Offer exactly two options: Tuesday at 10 AM, or Thursday at 2 PM. Ask which one works for them."
+        }
+      ],
+      "edges": [
+        {
+          "function": "select_time",
+          "description": "The caller picks one of the two offered slots.",
+          "target": "appointment_confirmed",
+          "properties": {
+            "slot": {
+              "type": "string",
+              "enum": ["Tuesday 10 AM", "Thursday 2 PM"],
+              "description": "The chosen appointment slot."
+            }
+          },
+          "required": ["slot"]
+        },
+        {
+          "function": "no_time_works",
+          "description": "Neither offered slot works for the caller.",
+          "target": "arrange_callback",
+          "properties": {},
+          "required": []
+        }
+      ]
+    },
+    {
+      "name": "confirm_cancellation",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Read the appointment date back to the caller and ask them to confirm that they want to cancel it."
+        }
+      ],
+      "edges": [
+        {
+          "function": "cancellation_confirmed",
+          "description": "The caller confirms they want the appointment cancelled.",
+          "target": "appointment_cancelled",
+          "properties": {},
+          "required": []
+        },
+        {
+          "function": "keep_appointment",
+          "description": "The caller changes their mind and wants to keep the appointment.",
+          "target": "appointment_kept",
+          "properties": {},
+          "required": []
+        }
+      ]
+    },
+    {
+      "name": "appointment_confirmed",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Confirm the appointment back to the caller, including their name and the chosen time, thank them, and say goodbye."
+        }
+      ],
+      "end": true
+    },
+    {
+      "name": "arrange_callback",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Apologise that neither time works, tell the caller someone from the clinic will call them back today to find a time, and say goodbye."
+        }
+      ],
+      "end": true
+    },
+    {
+      "name": "appointment_cancelled",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Tell the caller their appointment is cancelled, thank them for letting the clinic know, and say goodbye."
+        }
+      ],
+      "end": true
+    },
+    {
+      "name": "appointment_kept",
+      "task_messages": [
+        {
+          "role": "developer",
+          "content": "Tell the caller their appointment stays as it is, and say goodbye."
+        }
+      ],
+      "end": true
+    }
+  ]
+}
