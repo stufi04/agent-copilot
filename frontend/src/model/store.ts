@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { canAttachNode, canAttachNodeToNode, canMoveEdge, nodesRemovedBy, spanningTree, type MoveCheck } from './graph';
+import { canAttachNode, canAttachNodeToNode, canMoveEdge, nodesRemovedBy, removeNodes, spanningTree, type MoveCheck } from './graph';
 import type { AgentDraft, AgentEdge, AgentNode, EdgeProperty, Id, Selection } from './types';
 
 // Defaults mirror backend/agent_builder/schema.py and example_flow.json.
@@ -45,17 +45,6 @@ function uniqueName(name: string, taken: Iterable<string>): string {
   let n = 2;
   while (used.has(`${name}_${n}`)) n++;
   return `${name}_${n}`;
-}
-
-/** Remove the given nodes, their outgoing edges, and detach edges pointing at them. */
-function removeNodes(draft: AgentDraft, ids: Set<Id>): Pick<AgentDraft, 'nodes' | 'edges'> {
-  const nodes = Object.fromEntries(Object.entries(draft.nodes).filter(([id]) => !ids.has(id)));
-  const edges: Record<Id, AgentEdge> = {};
-  for (const [id, e] of Object.entries(draft.edges)) {
-    if (ids.has(e.sourceId)) continue;
-    edges[id] = e.targetId && ids.has(e.targetId) ? { ...e, targetId: null } : e;
-  }
-  return { nodes, edges };
 }
 
 // ---- undo history ----
@@ -120,6 +109,12 @@ interface EditorState {
   deleteEdge: (id: Id) => void;
   /** Replace the whole agent, e.g. with an imported one. */
   loadDraft: (draft: AgentDraft) => void;
+  /**
+   * Apply a change the copilot made. All its changes in one reply (same `turnId`) are a
+   * single undo step, however long the reply takes, unless something else changes the
+   * agent in between.
+   */
+  applyCopilotDraft: (draft: AgentDraft, turnId: string) => void;
   reset: () => void;
 }
 
@@ -348,6 +343,24 @@ export const useEditor = create<EditorState>()(
         },
 
         loadDraft: (draft) => set({ draft, selection: null }),
+
+        applyCopilotDraft: (draft, turnId) => {
+          const key = `copilot:${turnId}`;
+          const merge = lastKey === key; // the copilot's last change this turn is still the latest
+          lastKey = key;
+          lastAt = Date.now();
+          rawSet((s) => {
+            if (draft === s.draft) return {};
+            const sel = s.selection;
+            const selectionGone = (sel?.kind === 'node' && !draft.nodes[sel.id]) || (sel?.kind === 'edge' && !draft.edges[sel.id]);
+            return {
+              draft,
+              selection: selectionGone ? null : sel,
+              past: merge && s.past.length > 0 ? s.past : [...s.past, s.draft].slice(-HISTORY_LIMIT),
+              future: [],
+            };
+          });
+        },
 
         reset: () => set({ draft: initialDraft(), selection: null }),
       };

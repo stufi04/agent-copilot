@@ -4,7 +4,7 @@
 PROJECT := backend
 UI := frontend
 
-.PHONY: help install run dev test clean ui-install ui ui-test ui-e2e ui-e2e-open
+.PHONY: help install run dev test clean ui-install ui ui-test ui-e2e ui-e2e-open copilot-eval
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -36,6 +36,9 @@ ui-e2e: ## Run the agent editor's end-to-end tests (Playwright, real Chromium)
 
 ui-e2e-open: ## Open the end-to-end tests in Playwright's interactive UI
 	npm --prefix $(UI) run e2e:ui
+
+copilot-eval: ## Score the copilot on realistic requests (real OpenAI calls, ~$0.50 a run)
+	bash $(UI)/evals/run.sh
 
 clean: ## Remove the venv and Python caches
 	rm -rf $(PROJECT)/.venv

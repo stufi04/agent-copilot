@@ -1,9 +1,21 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { MIN_HEIGHT, useCopilot } from './copilot';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEditor } from '../model/store';
+import { errorsIn, MIN_HEIGHT, useCopilot } from './copilot';
+import { Markdown } from './Markdown';
 
 /** The copilot chat, docked along the bottom of the editor. Collapses to its header bar. */
 export function CopilotPanel() {
-  const { messages, status, error, open, height, send, stop, clear, setOpen, setHeight } = useCopilot();
+  const { messages, status, error, open, height, lastChange, leftProblems, send, stop, clear, setOpen, setHeight } = useCopilot();
+  // The copilot's last changes can be undone in one step while nothing has changed since.
+  const canUndoChange = useEditor((s) => lastChange !== null && s.draft === lastChange);
+  const undo = useEditor((s) => s.undo);
+  // Of the problems the copilot left, the ones still there (fixed or undone ones drop off).
+  const agent = useEditor((s) => s.draft);
+  const problems = useMemo(() => {
+    if (!leftProblems.length) return [];
+    const now = new Set(errorsIn(agent));
+    return leftProblems.filter((p) => now.has(p));
+  }, [leftProblems, agent]);
   const [draft, setDraft] = useState('');
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -99,15 +111,54 @@ export function CopilotPanel() {
           >
             {messages.length === 0 && !error && (
               <p className="copilot__empty muted">
-                Ask the copilot anything about designing your voice agent. For now it can only chat: it can't see or
-                change the graph yet.
+                Ask the copilot about your agent, or ask it to change it: "add a branch for callers who want to cancel",
+                "rename collect_details", "build me a pharmacy refill agent". You'll see the graph change, and one undo
+                takes back everything it did in a reply.
               </p>
             )}
-            {messages.map((m, i) => (
-              <div key={i} className={`copilot-msg copilot-msg--${m.role}`}>
-                {m.content || (streaming && i === messages.length - 1 ? <span className="copilot-msg__typing">…</span> : null)}
+            {messages.map((m, i) => {
+              const last = i === messages.length - 1;
+              if (m.role === 'check')
+                return (
+                  <p key={i} className="copilot-check">
+                    Checked the agent: these changes left {plural(m.problems.length, 'problem')}. Asking the copilot to fix{' '}
+                    {m.problems.length === 1 ? 'it' : 'them'}.
+                  </p>
+                );
+              if (m.role === 'tool')
+                return (
+                  <p key={i} className={`copilot-edit ${m.ok ? '' : 'copilot-edit--failed'}`}>
+                    <span aria-hidden="true">{m.ok ? '✓' : '✗'}</span> {m.summary}
+                  </p>
+                );
+              if (m.role === 'assistant' && !m.content)
+                return streaming && last ? (
+                  <div key={i} className="copilot-msg copilot-msg--assistant">
+                    <span className="copilot-msg__typing">…</span>
+                  </div>
+                ) : null; // a step that only edited the graph: its edits are listed below it
+              return (
+                <div key={i} className={`copilot-msg copilot-msg--${m.role}`}>
+                  {m.role === 'assistant' ? <Markdown text={m.content} /> : m.content}
+                </div>
+              );
+            })}
+            {problems.length > 0 && !streaming && (
+              <div className="copilot__problems" role="status">
+                <strong>⚠ The copilot's changes left {plural(problems.length, 'problem')}:</strong>
+                <ul>
+                  {problems.map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ul>
+                Fix {problems.length === 1 ? 'it' : 'them'} on the graph, ask the copilot to try again, or undo its changes.
               </div>
-            ))}
+            )}
+            {canUndoChange && !streaming && (
+              <button type="button" className="btn btn--small copilot__undo" onClick={undo}>
+                Undo these changes
+              </button>
+            )}
             {error && (
               <p className="copilot__error" role="alert">
                 {error}
@@ -163,3 +214,5 @@ function Chevron({ up }: { up: boolean }) {
     </svg>
   );
 }
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;

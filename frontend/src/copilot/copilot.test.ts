@@ -6,15 +6,17 @@ import { setChatStream, useCopilot } from './copilot';
 function fakeStream() {
   const fake = {
     calls: [] as ChatMessage[][],
+    agents: [] as unknown[],
     say: (_t: string) => {},
     finish: () => {},
     fail: (_e: Error) => {},
     signal: null as AbortSignal | null,
   };
   setChatStream(
-    (messages, onDelta, signal) =>
+    ({ messages, agent }, onDelta, signal) =>
       new Promise<void>((resolve, reject) => {
         fake.calls.push(messages);
+        fake.agents.push(agent);
         fake.say = onDelta;
         fake.finish = resolve;
         fake.fail = reject;
@@ -165,7 +167,11 @@ describe('streamChat (the HTTP side)', () => {
     if (response instanceof Error) fetchMock.mockRejectedValue(response);
     else fetchMock.mockResolvedValue(response);
     const deltas: string[] = [];
-    const result = await streamChat([{ role: 'user', content: 'Hi' }], (t) => deltas.push(t), new AbortController().signal)
+    const result = await streamChat(
+      { messages: [{ role: 'user', content: 'Hi' }], agent: { name: 'A' } },
+      (t) => deltas.push(t),
+      new AbortController().signal,
+    )
       .then(() => null)
       .catch((e: Error) => e.message);
     return { deltas, error: result, fetchMock };
@@ -180,7 +186,7 @@ describe('streamChat (the HTTP side)', () => {
     expect(deltas).toEqual(['Hel', 'lo']);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://localhost:7860/api/copilot/chat');
-    expect(JSON.parse(init!.body as string)).toEqual({ messages: [{ role: 'user', content: 'Hi' }] });
+    expect(JSON.parse(init!.body as string)).toEqual({ messages: [{ role: 'user', content: 'Hi' }], agent: { name: 'A' } });
   });
 
   it('turns an error event into an error, after the text that came before it', async () => {
