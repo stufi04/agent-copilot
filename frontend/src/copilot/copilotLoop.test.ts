@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { exportAgent } from '../model/export';
 import { useEditor } from '../model/store';
-import type { ChatRequest, ToolCall } from './chatApi';
-import { MAX_STEPS, setChatStream, useCopilot } from './copilot';
+import { toWire, type ChatRequest, type ToolCall } from './chatApi';
+import { checkMessage, MAX_STEPS, setChatStream, useCopilot } from './copilot';
 
 // The copilot editing the graph: the model's tool calls are applied to the editor,
 // the results go back to it, and everything one reply changed undoes in one step.
@@ -178,5 +178,52 @@ describe('copilot editing the graph', () => {
     ]);
     await copilot().send('Build me a refill agent');
     expect(exportAgent(editor().draft)).toMatchObject({ name: 'Refills', initial_node: 'ask', nodes: [{ name: 'ask' }, { name: 'bye' }] });
+  });
+});
+
+describe('checking the agent when the copilot is done', () => {
+  const unconnected = 'Error in node "bye": Not connected to the start node.';
+
+  it('asks the copilot once to fix errors its changes left, and it does', async () => {
+    const requests = scripted([{ calls: [addBye] }, { text: 'Added a goodbye.' }, { calls: [linkBye] }, { text: 'Connected it.' }]);
+    await copilot().send('Add a goodbye');
+
+    expect(requests).toHaveLength(4);
+    expect(requests[2].messages.at(-1)).toEqual({ role: 'check', content: checkMessage([unconnected]), problems: [unconnected] });
+    expect(checkMessage([unconnected])).toBe(
+      "[Automatic check by the editor] Your changes left the agent with these errors, which weren't there before:\n" +
+        `- ${unconnected}\n` +
+        'Fix them with your tools, then reply briefly. If one needs a decision from the user, ask them instead.',
+    );
+    expect(Object.keys(editor().draft.edges)).toHaveLength(1);
+    expect(copilot()).toMatchObject({ status: 'idle', leftProblems: [] });
+    expect(copilot().messages.at(-1)).toEqual({ role: 'assistant', content: 'Connected it.' });
+  });
+
+  it('says what is still broken if the fix attempt fails, without asking again', async () => {
+    const requests = scripted([{ calls: [addBye] }, { text: 'Added a goodbye.' }, { text: 'I left it for you.' }, { text: 'never asked' }]);
+    await copilot().send('Add a goodbye');
+
+    expect(requests).toHaveLength(3); // one nudge only
+    expect(copilot()).toMatchObject({ status: 'idle', leftProblems: [unconnected] });
+    expect(copilot().messages.at(-1)).toEqual({ role: 'assistant', content: 'I left it for you.' });
+  });
+
+  it("doesn't hold the copilot to errors that were there before it started", async () => {
+    // A fresh agent: Greeting has no task message and no way to end the call.
+    const requests = scripted([{ calls: [call('update_agent', { persona: 'Be brief.' })] }, { text: 'Done.' }]);
+    await copilot().send('Make the persona brief');
+    expect(requests).toHaveLength(2);
+    expect(copilot().leftProblems).toEqual([]);
+  });
+
+  it('only checks when the copilot changed something', async () => {
+    const requests = scripted([{ text: 'Nodes are steps.' }]);
+    await copilot().send('What is a node?');
+    expect(requests).toHaveLength(1);
+  });
+
+  it('the check reaches the model as a user message', () => {
+    expect(toWire([{ role: 'check', content: 'Fix it.', problems: ['x'] }])).toEqual([{ role: 'user', content: 'Fix it.' }]);
   });
 });

@@ -25,7 +25,12 @@ export type ChatMessage =
       /** For the panel: whether the edit worked, and what it did or why it didn't. */
       ok: boolean;
       summary: string;
-    };
+    }
+  /**
+   * The editor's own check after the copilot finished: its changes left the agent with
+   * errors, so it's asked to fix them. Sent to the model as a user message.
+   */
+  | { role: 'check'; content: string; problems: string[] };
 
 export interface ChatRequest {
   messages: ChatMessage[];
@@ -49,6 +54,7 @@ export const CHAT_URL = `${BACKEND_URL}/api/copilot/chat`;
 export function toWire(messages: ChatMessage[]) {
   return messages.map((m) => {
     if (m.role === 'tool') return { role: 'tool', tool_call_id: m.toolCallId, content: m.content };
+    if (m.role === 'check') return { role: 'user', content: m.content };
     if (m.role === 'assistant' && m.toolCalls?.length)
       return {
         role: 'assistant',

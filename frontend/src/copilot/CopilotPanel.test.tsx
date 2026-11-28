@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import App from '../App';
@@ -137,14 +137,20 @@ describe('CopilotPanel', () => {
     render(<App />);
 
     await user.type(box(), 'Add a goodbye{Enter}');
-    expect(await screen.findByText('Added a goodbye node.')).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Undo these changes' });
     expect(panel()).toHaveTextContent('✓ Added node "bye".');
     expect(panel()).toHaveTextContent(/✗ add_edge: There's no node named "nowhere"/);
     expect(screen.getAllByText('bye').length).toBeGreaterThan(0); // on the canvas
+    // "bye" was left unconnected: the copilot was asked to fix it, didn't, and you're told.
+    expect(panel()).toHaveTextContent('Checked the agent: these changes left 1 problem. Asking the copilot to fix it.');
+    expect(within(panel()).getByRole('status')).toHaveTextContent(
+      '⚠ The copilot\'s changes left 1 problem:Error in node "bye": Not connected to the start node.',
+    );
 
     await user.click(screen.getByRole('button', { name: 'Undo these changes' }));
     expect(useEditor.getState().draft).toBe(before);
     expect(screen.queryByRole('button', { name: 'Undo these changes' })).not.toBeInTheDocument();
+    expect(within(panel()).queryByRole('status')).not.toBeInTheDocument(); // undone, so no problem left
   });
 
   it('offers no undo once the agent has changed since', async () => {

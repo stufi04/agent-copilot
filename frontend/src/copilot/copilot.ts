@@ -4,6 +4,7 @@ import { applyTool } from '../model/copilotOps';
 import { describeAgent, describeIssues } from '../model/describe';
 import { useEditor } from '../model/store';
 import type { AgentDraft } from '../model/types';
+import { validate } from '../model/validate';
 import { streamChat, type ChatMessage, type ChatStream, type ToolCall } from './chatApi';
 
 // The copilot chat in the bottom panel. The conversation lives here (and in localStorage);
@@ -14,6 +15,9 @@ import { streamChat, type ChatMessage, type ChatStream, type ToolCall } from './
 // edits (tool calls), they're applied to the editor right away, their results go back to
 // the model, and it's asked again, until it answers with text alone. Everything the
 // copilot changes while answering one message is a single undo step.
+//
+// When it's done, the editor checks the agent: if the copilot's changes left errors
+// that weren't there before, it's asked once to fix them; any still left are shown.
 
 export type CopilotStatus = 'idle' | 'streaming' | 'error';
 
@@ -34,6 +38,8 @@ interface CopilotState {
    * editor still shows exactly that, one undo takes the reply's changes back.
    */
   lastChange: AgentDraft | null;
+  /** Errors the copilot's last reply left in the agent (that weren't there before it). */
+  leftProblems: string[];
 
   send(text: string): Promise<void>;
   /** Stop the reply being written; what has arrived (and any edits made) stays. */
@@ -59,6 +65,18 @@ const withoutEmptyReply = (messages: ChatMessage[]) => {
 };
 
 const editor = () => useEditor.getState();
+
+/** The agent's validation errors (not warnings), as the model is shown them. */
+export const errorsIn = (d: AgentDraft) => describeIssues(d, validate(d).filter((i) => i.severity === 'error'));
+
+/** What the editor tells the copilot when its changes left errors behind. */
+export function checkMessage(problems: string[]): string {
+  return [
+    "[Automatic check by the editor] Your changes left the agent with these errors, which weren't there before:",
+    ...problems.map((p) => `- ${p}`),
+    'Fix them with your tools, then reply briefly. If one needs a decision from the user, ask them instead.',
+  ].join('\n');
+}
 
 /** Apply one tool call to the editor, returning the message that tells the model how it went. */
 function runToolCall(call: ToolCall, turnId: string): Extract<ChatMessage, { role: 'tool' }> {
@@ -93,6 +111,7 @@ export const useCopilot = create<CopilotState>()(
       open: true,
       height: DEFAULT_HEIGHT,
       lastChange: null,
+      leftProblems: [],
 
       send: async (text) => {
         const content = text.trim();
@@ -103,6 +122,9 @@ export const useCopilot = create<CopilotState>()(
         const current = () => controller === mine; // false once stopped by "New chat" or a newer message
         const turnId = crypto.randomUUID();
         let changed = false;
+        let checked = false; // the copilot gets one nudge per message to fix what it broke
+        const errorsBefore = new Set(errorsIn(editor().draft));
+        const newErrors = () => (changed ? errorsIn(editor().draft).filter((e) => !errorsBefore.has(e)) : []);
 
         set((s) => ({
           messages: [...s.messages, { role: 'user', content }],
@@ -110,6 +132,7 @@ export const useCopilot = create<CopilotState>()(
           error: null,
           open: true,
           lastChange: null,
+          leftProblems: [],
         }));
 
         const appendToReply = (delta: string) => {
@@ -128,6 +151,7 @@ export const useCopilot = create<CopilotState>()(
             ...update,
             messages: withoutEmptyReply(s.messages),
             lastChange: changed ? editor().draft : null,
+            leftProblems: newErrors(),
           }));
           controller = null;
         };
@@ -143,6 +167,15 @@ export const useCopilot = create<CopilotState>()(
             const calls = (await stream({ messages: history, agent: describeAgent(editor().draft) }, appendToReply, mine.signal)) ?? [];
             if (!current()) return;
             if (!calls.length) {
+              const problems = newErrors();
+              if (problems.length && !checked) {
+                // Finished, but broke something: ask once for a fix before handing back.
+                checked = true;
+                set((s) => ({
+                  messages: [...withoutEmptyReply(s.messages), { role: 'check', content: checkMessage(problems), problems }],
+                }));
+                continue;
+              }
               finish({ status: 'idle' });
               return;
             }
@@ -177,7 +210,7 @@ export const useCopilot = create<CopilotState>()(
         const c = controller;
         controller = null;
         c?.abort();
-        set({ messages: [], status: 'idle', error: null, lastChange: null });
+        set({ messages: [], status: 'idle', error: null, lastChange: null, leftProblems: [] });
       },
 
       setOpen: (open) => set({ open }),
