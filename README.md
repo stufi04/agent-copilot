@@ -65,6 +65,8 @@ make ui-test      # frontend: Vitest unit + component tests
 make ui-e2e       # frontend: Playwright end-to-end tests
 ```
 
+`backend/tests/test_llm_routing.py` checks that the LLM takes the right edge for what the caller says (book vs reschedule vs cancel, and so on) in `branching_flow.json`. It calls OpenAI, so it's skipped unless you opt in: `RUN_LLM_TESTS=1 uv run --directory backend pytest tests/test_llm_routing.py -v`.
+
 GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request and on pushes to `main`. A first job checks which parts changed, and each suite runs only when it's relevant:
 
 | Job | Runs when these change |
@@ -84,6 +86,7 @@ A final **CI result** job always runs and fails if any suite failed. Branch prot
 | `backend/bot.py` | The voice pipeline (WebRTC + ElevenLabs STT/TTS + OpenAI LLM). Loads an agent JSON via `AgentBuilder` and runs it. No graph logic lives here. |
 | `backend/agent_builder/` | All agent-building code. `schema.py` = the declarative `AgentConfig` / `Node` / `Edge` contract; `builder.py` = `AgentBuilder`, which loads + validates the JSON and compiles it into a Pipecat Flows graph. |
 | `backend/example_flow.json` | The example agent **as data** — a clinic scheduler. The artifact the Phase 2 Composer generates/edits. |
+| `backend/branching_flow.json` | A branching example: the caller's answer picks the edge (book / reschedule / cancel, a slot or "none work", confirm or keep a cancellation). Import it into the editor to try it. |
 | `frontend/src/model/` | Editor state (zustand, persisted), validation, and export to the backend JSON format. |
 | `frontend/src/graph/` | React Flow canvas, node/edge-pill components, and the tree layout. |
 | `frontend/src/panel/` | Right-hand side panel with the node, edge and agent-settings forms. |

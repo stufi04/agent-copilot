@@ -225,3 +225,69 @@ def test_bot_runs_the_agent_sent_with_the_call_or_the_default_flow():
     assert builder_for(None).config.name == default
     with pytest.raises(ValueError):
         builder_for({"agent": minimal_agent(initial_node="nowhere")})
+
+
+# ---- branching ------------------------------------------------------------------
+
+BRANCHING_FLOW = BACKEND / "branching_flow.json"
+
+
+def walk_every_path(builder: AgentBuilder) -> list:
+    """Every route from the start node to an end node, taking each edge a node offers.
+
+    Each route is a list of (node, edge taken) steps ending with (end node, None), and is
+    walked through the real edge handlers, so it follows the targets the builder wires up.
+    """
+    paths = []
+
+    def walk(node: dict, path: list):
+        if not node["functions"]:
+            paths.append(path + [(node["name"], None)])
+            return
+        for fn in node["functions"]:
+            args = {key: (spec.get("enum") or ["x"])[0] for key, spec in fn.properties.items()}
+            _, next_node = asyncio.run(fn.handler(args, SimpleNamespace(state={})))
+            walk(next_node, path + [(node["name"], fn.name)])
+
+    walk(builder.build_initial_node(), [])
+    return paths
+
+
+def test_a_node_with_several_edges_offers_the_llm_one_function_per_edge():
+    greeting = AgentBuilder.from_json(BRANCHING_FLOW).build_initial_node()
+    assert [fn.name for fn in greeting["functions"]] == [
+        "book_appointment",
+        "reschedule_appointment",
+        "cancel_appointment",
+    ]
+
+
+def test_each_edge_leads_to_its_own_target():
+    builder = AgentBuilder.from_json(BRANCHING_FLOW)
+    targets = {}
+    for fn in builder.build_initial_node()["functions"]:
+        _, next_node = asyncio.run(fn.handler({}, SimpleNamespace(state={})))
+        targets[fn.name] = next_node["name"]
+    assert targets == {
+        "book_appointment": "collect_details",
+        "reschedule_appointment": "find_appointment_to_move",
+        "cancel_appointment": "find_appointment_to_cancel",
+    }
+
+
+def test_branching_flow_routes_every_path_to_an_end_node():
+    builder = AgentBuilder.from_json(BRANCHING_FLOW)
+    routes = [[edge for _, edge in path if edge] + [path[-1][0]] for path in walk_every_path(builder)]
+
+    assert routes == [
+        ["book_appointment", "record_details", "select_time", "appointment_confirmed"],
+        ["book_appointment", "record_details", "no_time_works", "arrange_callback"],
+        # Rescheduling shares the booking's time-slot node and its two ways out.
+        ["reschedule_appointment", "record_appointment_to_move", "select_time", "appointment_confirmed"],
+        ["reschedule_appointment", "record_appointment_to_move", "no_time_works", "arrange_callback"],
+        ["cancel_appointment", "record_appointment_to_cancel", "cancellation_confirmed", "appointment_cancelled"],
+        ["cancel_appointment", "record_appointment_to_cancel", "keep_appointment", "appointment_kept"],
+    ]
+    # Every route finishes by hanging up.
+    end_nodes = {n.name for n in builder.config.nodes if n.end}
+    assert {route[-1] for route in routes} == end_nodes

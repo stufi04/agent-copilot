@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import branching from '../../../backend/branching_flow.json';
 import example from '../../../backend/example_flow.json';
 import newAgent from '../../e2e/fixtures/new_agent.json';
 import { exportAgent } from './export';
@@ -49,6 +50,7 @@ describe('round trip', () => {
   it.each([
     ['frontend/e2e/fixtures/new_agent.json', newAgent],
     ['backend/example_flow.json', example],
+    ['backend/branching_flow.json', branching],
   ])('importing then exporting %s gives back the same JSON', (_, file) => {
     const { draft, warnings } = ok(importAgent(JSON.stringify(file)));
     expect(warnings).toEqual([]);
