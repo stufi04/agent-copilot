@@ -1,9 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEditor } from '../model/store';
 import { MIN_HEIGHT, useCopilot } from './copilot';
+import { Markdown } from './Markdown';
 
 /** The copilot chat, docked along the bottom of the editor. Collapses to its header bar. */
 export function CopilotPanel() {
-  const { messages, status, error, open, height, send, stop, clear, setOpen, setHeight } = useCopilot();
+  const { messages, status, error, open, height, lastChange, send, stop, clear, setOpen, setHeight } = useCopilot();
+  // The copilot's last changes can be undone in one step while nothing has changed since.
+  const canUndoChange = useEditor((s) => lastChange !== null && s.draft === lastChange);
+  const undo = useEditor((s) => s.undo);
   const [draft, setDraft] = useState('');
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -99,15 +104,36 @@ export function CopilotPanel() {
           >
             {messages.length === 0 && !error && (
               <p className="copilot__empty muted">
-                Ask the copilot anything about designing your voice agent. For now it can only chat: it can't see or
-                change the graph yet.
+                Ask the copilot about your agent, or ask it to change it: "add a branch for callers who want to cancel",
+                "rename collect_details", "build me a pharmacy refill agent". You'll see the graph change, and one undo
+                takes back everything it did in a reply.
               </p>
             )}
-            {messages.map((m, i) => (
-              <div key={i} className={`copilot-msg copilot-msg--${m.role}`}>
-                {m.content || (streaming && i === messages.length - 1 ? <span className="copilot-msg__typing">…</span> : null)}
-              </div>
-            ))}
+            {messages.map((m, i) => {
+              const last = i === messages.length - 1;
+              if (m.role === 'tool')
+                return (
+                  <p key={i} className={`copilot-edit ${m.ok ? '' : 'copilot-edit--failed'}`}>
+                    <span aria-hidden="true">{m.ok ? '✓' : '✗'}</span> {m.summary}
+                  </p>
+                );
+              if (m.role === 'assistant' && !m.content)
+                return streaming && last ? (
+                  <div key={i} className="copilot-msg copilot-msg--assistant">
+                    <span className="copilot-msg__typing">…</span>
+                  </div>
+                ) : null; // a step that only edited the graph: its edits are listed below it
+              return (
+                <div key={i} className={`copilot-msg copilot-msg--${m.role}`}>
+                  {m.role === 'assistant' ? <Markdown text={m.content} /> : m.content}
+                </div>
+              );
+            })}
+            {canUndoChange && !streaming && (
+              <button type="button" className="btn btn--small copilot__undo" onClick={undo}>
+                Undo these changes
+              </button>
+            )}
             {error && (
               <p className="copilot__error" role="alert">
                 {error}

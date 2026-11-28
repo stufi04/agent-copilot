@@ -1,0 +1,166 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "add_node",
+      "description": "Add a step to the agent. A new node isn't connected to anything: add an edge to it (add_edge) so the conversation can reach it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Unique snake_case name, e.g. collect_details."},
+          "task_message": {"type": "string", "description": "What the agent does at this step, written as an instruction to the LLM."},
+          "end": {"type": "boolean", "description": "True if the call ends after this step. A node with no outgoing edges must end the call."},
+          "role_message": {"type": "string", "description": "Optional: replaces the agent-wide persona for this step only."}
+        },
+        "required": ["name", "task_message"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_node",
+      "description": "Change a node. Renaming keeps the edges that point at it. Only the fields given change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "The node's current name."},
+          "new_name": {"type": "string"},
+          "task_message": {"type": "string"},
+          "end": {"type": "boolean"},
+          "role_message": {"type": "string", "description": "Empty string to go back to the agent-wide persona."}
+        },
+        "required": ["name"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "delete_node",
+      "description": "Delete a node and its edges. Nodes that could then no longer be reached from the start node are deleted too. The start node can't be deleted.",
+      "parameters": {
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "add_edge",
+      "description": "Add a transition out of a node. The LLM running the agent takes it when the caller's reply matches its description. Several edges out of one node branch on what the caller says.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {"type": "string", "description": "Name of the node the edge leaves."},
+          "function": {"type": "string", "description": "snake_case function name, unique among this node's edges, e.g. cancel_appointment."},
+          "description": {"type": "string", "description": "When to take this edge, e.g. 'The caller wants to cancel an appointment.'"},
+          "to": {"type": "string", "description": "Name of the node it leads to."},
+          "fields": {
+            "type": "array",
+            "description": "Optional: values the LLM collects from the caller when taking the edge.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {"type": "string", "description": "snake_case field name."},
+                "type": {"type": "string", "enum": ["string", "number", "integer", "boolean"]},
+                "description": {"type": "string"},
+                "required": {"type": "boolean"},
+                "enum": {"type": "array", "items": {"type": "string"}, "description": "Allowed values (string fields only)."}
+              },
+              "required": ["name", "type"]
+            }
+          }
+        },
+        "required": ["from", "function", "description", "to"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_edge",
+      "description": "Change an edge, found by the node it leaves and its function name. Only the fields given change; 'fields' replaces all of the edge's fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {"type": "string"},
+          "function": {"type": "string", "description": "The edge's current function name."},
+          "new_function": {"type": "string"},
+          "description": {"type": "string"},
+          "to": {"type": "string", "description": "Name of the node it should lead to instead."},
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {"type": "string"},
+                "type": {"type": "string", "enum": ["string", "number", "integer", "boolean"]},
+                "description": {"type": "string"},
+                "required": {"type": "boolean"},
+                "enum": {"type": "array", "items": {"type": "string"}}
+              },
+              "required": ["name", "type"]
+            }
+          }
+        },
+        "required": ["from", "function"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "delete_edge",
+      "description": "Delete an edge. Nodes that could then no longer be reached from the start node are deleted too.",
+      "parameters": {
+        "type": "object",
+        "properties": {"from": {"type": "string"}, "function": {"type": "string"}},
+        "required": ["from", "function"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "set_start_node",
+      "description": "Make another node the one the conversation starts at.",
+      "parameters": {
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "update_agent",
+      "description": "Change the agent's name or its persona (the role message every node uses unless it has its own).",
+      "parameters": {
+        "type": "object",
+        "properties": {"name": {"type": "string"}, "persona": {"type": "string"}},
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "replace_agent",
+      "description": "Replace the whole agent with a new one. Use it to build an agent from scratch or for a rewrite that touches most nodes; prefer the smaller tools for targeted changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "object",
+            "description": "The full agent in the same JSON format as the current agent you're shown (name, persona, initial_node, nodes with task_messages, edges and end). Keep voice_id and model as they are unless asked."
+          }
+        },
+        "required": ["agent"]
+      }
+    }
+  }
+]

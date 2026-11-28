@@ -9,7 +9,7 @@ interface JsonSchemaProperty {
   enum?: string[];
 }
 
-function exportProperty(p: EdgeProperty): JsonSchemaProperty {
+export function exportProperty(p: EdgeProperty): JsonSchemaProperty {
   const out: JsonSchemaProperty = { type: p.type };
   if (p.description.trim()) out.description = p.description.trim();
   if (p.type === 'string') {

@@ -9,7 +9,7 @@ import { setChatStream, useCopilot } from './copilot';
 function fakeStream() {
   const fake = { calls: [] as unknown[], say: (_t: string) => {}, finish: () => {} };
   setChatStream(
-    (messages, onDelta, signal) =>
+    ({ messages }, onDelta, signal) =>
       new Promise<void>((resolve, reject) => {
         fake.calls.push(messages);
         fake.say = (t) => act(() => onDelta(t));
@@ -29,7 +29,7 @@ describe('CopilotPanel', () => {
     const fake = fakeStream();
     render(<App />);
 
-    expect(panel()).toHaveTextContent("it can't see or change the graph yet");
+    expect(panel()).toHaveTextContent('or ask it to change it');
     await user.type(box(), 'How should I structure a booking agent?{Enter}');
 
     expect(fake.calls).toEqual([[{ role: 'user', content: 'How should I structure a booking agent?' }]]);
@@ -119,5 +119,67 @@ describe('CopilotPanel', () => {
     await user.click(box());
     await user.keyboard('{Meta>}z{/Meta}{Control>}z{/Control}');
     expect(useEditor.getState().draft).toBe(before);
+  });
+
+  it('lists the edits under the reply, and "Undo these changes" takes them all back', async () => {
+    const user = userEvent.setup();
+    const before = useEditor.getState().draft;
+    let step = 0;
+    setChatStream(async (_request, onDelta) => {
+      step++;
+      if (step === 1)
+        return [
+          { id: 'a', name: 'add_node', arguments: '{"name": "bye", "task_message": "Say bye.", "end": true}' },
+          { id: 'b', name: 'add_edge', arguments: '{"from": "Greeting", "function": "done", "description": "Done.", "to": "nowhere"}' },
+        ];
+      onDelta('Added a goodbye node.');
+    });
+    render(<App />);
+
+    await user.type(box(), 'Add a goodbye{Enter}');
+    expect(await screen.findByText('Added a goodbye node.')).toBeInTheDocument();
+    expect(panel()).toHaveTextContent('✓ Added node "bye".');
+    expect(panel()).toHaveTextContent(/✗ add_edge: There's no node named "nowhere"/);
+    expect(screen.getAllByText('bye').length).toBeGreaterThan(0); // on the canvas
+
+    await user.click(screen.getByRole('button', { name: 'Undo these changes' }));
+    expect(useEditor.getState().draft).toBe(before);
+    expect(screen.queryByRole('button', { name: 'Undo these changes' })).not.toBeInTheDocument();
+  });
+
+  it('offers no undo once the agent has changed since', async () => {
+    setChatStream(async (_request, onDelta) => {
+      if (useCopilot.getState().messages.length < 3)
+        return [{ id: 'a', name: 'update_agent', arguments: '{"name": "Copilot named"}' }];
+      onDelta('Renamed it.');
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.type(box(), 'Rename the agent{Enter}');
+    expect(await screen.findByRole('button', { name: 'Undo these changes' })).toBeInTheDocument();
+
+    act(() => useEditor.getState().updateAgent({ name: 'Mine' }));
+    expect(screen.queryByRole('button', { name: 'Undo these changes' })).not.toBeInTheDocument();
+  });
+
+  it("renders the copilot's Markdown, but not raw HTML, and leaves your own messages as typed", async () => {
+    const user = userEvent.setup();
+    setChatStream(async (_request, onDelta) => {
+      onDelta('The agent **Clinic Front Desk** starts at `greeting`:\n\n- **book_appointment** leads to `collect_details`\n  - then `offer_times`\n\n');
+      onDelta('<img src=x onerror="alert(1)"> See [the docs](https://example.com).');
+    });
+    render(<App />);
+    await user.type(box(), 'Use **stars** please{Enter}');
+
+    const reply = (await screen.findByText('Clinic Front Desk')).closest('.copilot-msg') as HTMLElement;
+    expect(screen.getByText('Clinic Front Desk').tagName).toBe('STRONG');
+    expect(reply.querySelector('code')).toHaveTextContent('greeting');
+    expect(reply.querySelectorAll('li')).toHaveLength(2); // a nested list
+    expect(reply.querySelector('img')).toBeNull(); // raw HTML isn't rendered
+    expect(screen.getByRole('link', { name: 'the docs' })).toHaveAttribute('target', '_blank');
+    expect(reply).not.toHaveTextContent('**');
+
+    // What you type is shown as you typed it.
+    expect(screen.getByText('Use **stars** please')).toBeInTheDocument();
   });
 });

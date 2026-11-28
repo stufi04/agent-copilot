@@ -1,4 +1,4 @@
-import type { AgentDraft, Id } from './types';
+import type { AgentDraft, AgentEdge, Id } from './types';
 
 // Graph queries over the draft, shared by the store, validation and the layout.
 //
@@ -65,6 +65,17 @@ export function spanningTree(d: AgentDraft): SpanningTree {
   if (d.nodes[d.initialNodeId]) walk(d.initialNodeId);
   for (const id of Object.keys(d.nodes)) if (!visited.has(id)) walk(id);
   return { parentEdge, roots };
+}
+
+/** Remove the given nodes, their outgoing edges, and detach edges pointing at them. */
+export function removeNodes(draft: AgentDraft, ids: Set<Id>): Pick<AgentDraft, 'nodes' | 'edges'> {
+  const nodes = Object.fromEntries(Object.entries(draft.nodes).filter(([id]) => !ids.has(id)));
+  const edges: Record<Id, AgentEdge> = {};
+  for (const [id, e] of Object.entries(draft.edges)) {
+    if (ids.has(e.sourceId)) continue;
+    edges[id] = e.targetId && ids.has(e.targetId) ? { ...e, targetId: null } : e;
+  }
+  return { nodes, edges };
 }
 
 /**
