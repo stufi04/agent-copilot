@@ -1,5 +1,6 @@
 import { ReactFlowProvider } from '@xyflow/react';
 import { useMemo } from 'react';
+import { CallButton, CallPanel } from './call/CallControls';
 import { Canvas } from './graph/Canvas';
 import { useEditor } from './model/store';
 import { erroredIds, validate } from './model/validate';
@@ -11,6 +12,7 @@ export default function App() {
   const draft = useEditor((s) => s.draft);
   const issues = useMemo(() => validate(draft), [draft]);
   const errored = useMemo(() => erroredIds(issues), [issues]);
+  const blocked = issues.some((i) => i.severity === 'error');
   useUndoShortcuts();
 
   return (
@@ -21,6 +23,11 @@ export default function App() {
           <ReactFlowProvider>
             <Canvas errored={errored} />
           </ReactFlowProvider>
+          {/* Top-left of the canvas, under the AgentEditor title: the call button, and the conversation below it. */}
+          <div className="call-dock">
+            <CallButton blocked={blocked} />
+            <CallPanel />
+          </div>
         </div>
         <SidePanel issues={issues} />
       </main>

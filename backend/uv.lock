@@ -1847,6 +1847,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "watchfiles" },
 ]
 
 [package.metadata]
@@ -1856,7 +1857,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.2.0" }]
+dev = [
+    { name = "pytest", specifier = ">=9.2.0" },
+    { name = "watchfiles", specifier = ">=1.2.0" },
+]
 
 [[package]]
 name = "protobuf"

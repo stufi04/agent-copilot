@@ -6,6 +6,7 @@ import type { Id } from '../model/types';
 import { AgentNodeCard } from './AgentNodeCard';
 import { EdgePill } from './EdgePill';
 import { useLinkDrag } from './linkDrag';
+import { useCall } from '../call/call';
 import { toFlow, type FlowNode } from './toFlow';
 
 const nodeTypes: NodeTypes = { agentNode: AgentNodeCard, edgePill: EdgePill } as NodeTypes;
@@ -91,7 +92,17 @@ export function Canvas({ errored }: { errored: Set<Id> }) {
     return { nodeId: over, state: result.ok ? ('valid' as const) : ('invalid' as const) };
   }, [linkOver, over, dragKind, dragId, canDrop]);
 
-  const layout = useMemo(() => toFlow(draft, selection, errored, dropState), [draft, selection, errored, dropState]);
+  // During a call, the backend names the node the conversation is in; node names are unique.
+  const activeName = useCall((s) => s.activeNode);
+  const activeId = useMemo(
+    () => (activeName ? (Object.values(draft.nodes).find((n) => n.name.trim() === activeName)?.id ?? null) : null),
+    [activeName, draft.nodes],
+  );
+
+  const layout = useMemo(
+    () => toFlow(draft, selection, errored, dropState, activeId),
+    [draft, selection, errored, dropState, activeId],
+  );
 
   // While dragging, shift the moving elements by the drag offset; everything else stays put.
   const nodes = useMemo<FlowNode[]>(() => {

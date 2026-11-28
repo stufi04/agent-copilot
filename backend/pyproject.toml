@@ -23,6 +23,7 @@ package = false
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",
+    "watchfiles>=1.2.0",
 ]
 
 [tool.pytest.ini_options]
