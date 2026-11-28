@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { setConnectionFactory, useCall } from '../call/call';
+import { DEFAULT_HEIGHT, setChatStream, useCopilot } from '../copilot/copilot';
 import { useEditor } from '../model/store';
 
 // jsdom lacks a few browser APIs React Flow relies on; minimal stand-ins.
@@ -28,6 +29,9 @@ beforeEach(() => {
   useEditor.setState({ past: [], future: [] });
   useCall.setState({ status: 'idle', lines: [], activeNode: null, error: null, agentName: null });
   setConnectionFactory(null);
+  useCopilot.setState({ messages: [], status: 'idle', error: null, open: true, height: DEFAULT_HEIGHT });
+  // No test talks to the real backend: a test that chats installs its own stream.
+  setChatStream(() => Promise.reject(new Error('No chat stream set up in this test.')));
 });
 
 afterEach(() => {

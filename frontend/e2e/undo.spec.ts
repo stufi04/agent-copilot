@@ -93,3 +93,25 @@ test('several kinds of change unwind one by one, back to the imported agent', as
   await expect(editor.node('Greeting')).toBeVisible();
   await expect(undo).toBeDisabled();
 });
+
+test("⌘Z and ⇧⌘Z in the copilot's message box edit the message, not the graph", async ({ page }) => {
+  const editor = new Editor(page);
+  await editor.node('Confirm').click();
+  const name = editor.panel.getByLabel(/^Name/);
+  await name.fill('Wrap up'); // a graph change that ⌘Z would otherwise undo
+  await page.keyboard.press('Escape');
+  await expect(editor.node('Wrap up')).toBeVisible();
+
+  const box = page.getByRole('textbox', { name: 'Message the copilot' });
+  await box.click();
+  await box.pressSequentially('hello');
+  await box.press(UNDO);
+  await expect(box).toHaveValue('hell'); // the browser's own undo (key by key, for keys typed one at a time)
+  await box.press(REDO);
+  await expect(box).toHaveValue('hello');
+  await expect(editor.node('Wrap up')).toBeVisible(); // the graph is untouched
+
+  await editor.node('Wrap up').click(); // outside the chat, ⌘Z is the graph's again
+  await page.keyboard.press(UNDO);
+  await expect(editor.node('Confirm')).toBeVisible();
+});

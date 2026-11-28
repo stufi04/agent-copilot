@@ -1,12 +1,13 @@
 import { ReactFlowProvider } from '@xyflow/react';
 import { useMemo } from 'react';
 import { CallButton, CallPanel } from './call/CallControls';
+import { CopilotPanel } from './copilot/CopilotPanel';
 import { Canvas } from './graph/Canvas';
 import { useEditor } from './model/store';
 import { erroredIds, validate } from './model/validate';
 import { SidePanel } from './panel/SidePanel';
 import { TopBar } from './TopBar';
-import { useUndoShortcuts } from './UndoRedo';
+import { useUndoShortcuts } from './useUndoShortcuts';
 
 export default function App() {
   const draft = useEditor((s) => s.draft);
@@ -31,6 +32,8 @@ export default function App() {
         </div>
         <SidePanel issues={issues} />
       </main>
+      {/* Along the bottom, the full width of the editor, like an IDE's assistant panel. */}
+      <CopilotPanel />
     </div>
   );
 }

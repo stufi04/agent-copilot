@@ -1,6 +1,7 @@
 import { PipecatClient, type Participant } from '@pipecat-ai/client-js';
 import { SmallWebRTCTransport } from '@pipecat-ai/small-webrtc-transport';
-import { BACKEND_URL, type CallConnection, type ConnectionFactory } from './call';
+import { BACKEND_URL } from '../backend';
+import type { CallConnection, ConnectionFactory } from './call';
 
 // The real call: Pipecat's browser client over SmallWebRTC, talking to the backend's
 // dev runner. POST /start registers a session carrying the agent JSON; the transport
