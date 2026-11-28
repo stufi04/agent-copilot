@@ -17,7 +17,9 @@
     "pree2e": "node scripts/check-node.mjs",
     "e2e": "playwright test",
     "pree2e:ui": "node scripts/check-node.mjs",
-    "e2e:ui": "playwright test --ui"
+    "e2e:ui": "playwright test --ui",
+    "preeval:copilot": "node scripts/check-node.mjs",
+    "eval:copilot": "vitest run -c vitest.eval.config.ts"
   },
   "dependencies": {
     "@pipecat-ai/client-js": "^1.18.0",

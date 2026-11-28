@@ -96,7 +96,7 @@ function runToolCall(call: ToolCall, turnId: string): Extract<ChatMessage, { rol
   const summary = result.ok ? result.summary : `${call.name}: ${result.error}`;
   const content = JSON.stringify(
     result.ok
-      ? { ok: true, result: result.summary, issues: describeIssues(draft) }
+      ? { ok: true, result: result.summary, ...(result.hint ? { hint: result.hint } : {}), issues: describeIssues(draft) }
       : { ok: false, error: result.error },
   );
   return { role: 'tool', toolCallId: call.id, content, ok: result.ok, summary };

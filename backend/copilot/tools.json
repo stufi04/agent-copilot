@@ -38,7 +38,7 @@
     "type": "function",
     "function": {
       "name": "delete_node",
-      "description": "Delete a node and its edges. Nodes that could then no longer be reached from the start node are deleted too. The start node can't be deleted.",
+      "description": "Delete a node that no edge leads to any more, with its own edges. Nodes that could then no longer be reached from the start node are deleted too. To remove a step that an edge leads to, delete that edge instead (delete_edge), or retarget it first. The start node can't be deleted.",
       "parameters": {
         "type": "object",
         "properties": {"name": {"type": "string"}},
@@ -156,7 +156,51 @@
         "properties": {
           "agent": {
             "type": "object",
-            "description": "The full agent in the same JSON format as the current agent you're shown (name, persona, initial_node, nodes with task_messages, edges and end). Keep voice_id and model as they are unless asked."
+            "description": "The full agent, in the same format as the agent you're shown. Every node except the start node must be the target of some edge. voice_id and model stay as they are unless given.",
+            "properties": {
+              "name": {"type": "string", "description": "A fitting name for the agent."},
+              "persona": {"type": "string", "description": "The role message every node uses: who the agent is and how it speaks."},
+              "initial_node": {"type": "string", "description": "Name of the start node."},
+              "nodes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {"type": "string", "description": "Unique snake_case name."},
+                    "task_messages": {
+                      "type": "array",
+                      "description": "One message: what the agent does at this step.",
+                      "items": {
+                        "type": "object",
+                        "properties": {"role": {"type": "string", "enum": ["developer"]}, "content": {"type": "string"}},
+                        "required": ["role", "content"]
+                      }
+                    },
+                    "edges": {
+                      "type": "array",
+                      "description": "Transitions out of this node. Omit for an end node.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "function": {"type": "string", "description": "snake_case, unique among this node's edges."},
+                          "description": {"type": "string", "description": "When the caller's reply means this edge."},
+                          "target": {"type": "string", "description": "Name of the node it leads to."},
+                          "properties": {
+                            "type": "object",
+                            "description": "Fields to collect, as JSON-schema properties, e.g. {\"full_name\": {\"type\": \"string\", \"description\": \"Caller's full name.\"}}."
+                          },
+                          "required": {"type": "array", "items": {"type": "string"}, "description": "Names of the fields that are required."}
+                        },
+                        "required": ["function", "description", "target"]
+                      }
+                    },
+                    "end": {"type": "boolean", "description": "True if the call ends after this step."}
+                  },
+                  "required": ["name", "task_messages"]
+                }
+              }
+            },
+            "required": ["name", "persona", "initial_node", "nodes"]
           }
         },
         "required": ["agent"]

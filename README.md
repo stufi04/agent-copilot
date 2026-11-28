@@ -66,6 +66,8 @@ make ui-test      # frontend: Vitest unit + component tests
 make ui-e2e       # frontend: Playwright end-to-end tests
 ```
 
+`make copilot-eval` scores the copilot on realistic requests (`frontend/evals/cases.ts`: add a branch, rename, add a yes/no loop, collect a new field, answer a question, remove an option, build an agent from scratch, and a request that overlaps an existing edge). It runs the real copilot loop against a backend of its own (port 7898) and OpenAI, then scores each result twice: code checks for what must hold (valid agent, the right things changed and nothing else), and an LLM judge for a design checklist (answers covered, distinct edge descriptions, task messages consistent with the graph, accurate reply). It prints a summary and writes the full report, including every tool call, to `frontend/test-results/copilot-eval/`. About $0.50 a run; results vary a little between runs, so compare a couple of runs before trusting a change.
+
 `backend/tests/test_llm_routing.py` checks that the LLM takes the right edge for what the caller says (book vs reschedule vs cancel, and so on) in `branching_flow.json`. It calls OpenAI, so it's skipped unless you opt in: `RUN_LLM_TESTS=1 uv run --directory backend pytest tests/test_llm_routing.py -v`.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request and on pushes to `main`. A first job checks which parts changed, and each suite runs only when it's relevant:

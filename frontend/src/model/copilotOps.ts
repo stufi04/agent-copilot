@@ -8,10 +8,15 @@ import type { AgentDraft, AgentEdge, AgentNode, EdgeProperty, Id, PropertyType }
 // A tool that can't do what it was asked changes nothing and says why, so the model
 // can correct itself.
 
-export type ToolResult = { ok: true; summary: string } | { ok: false; error: string };
+/** `hint` is for the model only: a nudge about what else the change may call for. */
+export type ToolResult = { ok: true; summary: string; hint?: string } | { ok: false; error: string };
 
 type Args = Record<string, unknown>;
-type Tool = (d: AgentDraft, args: Args) => { draft: AgentDraft; summary: string };
+type Tool = (d: AgentDraft, args: Args) => { draft: AgentDraft; summary: string; hint?: string };
+
+/** Adding or removing an option out of a node: its task message may list the options. */
+const optionsHint = (nodeName: string) =>
+  `If the task message of "${nodeName}" lists or mentions the options the caller has, update it to match (update_node).`;
 
 class ToolError extends Error {}
 const fail = (message: string): never => {
@@ -77,10 +82,14 @@ function fields(args: Args): EdgeProperty[] | undefined {
 const nodeNames = (d: AgentDraft) => Object.values(d.nodes).map((n) => n.name.trim());
 
 function findNode(d: AgentDraft, nodeName: string): AgentNode {
-  const matches = Object.values(d.nodes).filter((n) => n.name.trim() === nodeName);
+  const nodes = Object.values(d.nodes);
+  const matches = nodes.filter((n) => n.name.trim() === nodeName);
   if (matches.length > 1) fail(`Several nodes are named "${nodeName}"; rename one first.`);
-  if (!matches.length) fail(`There's no node named "${nodeName}". Nodes: ${nodeNames(d).join(', ')}.`);
-  return matches[0];
+  if (matches.length) return matches[0];
+  // "greeting" for "Greeting": take it when the case is the only difference and only one node fits.
+  const loose = nodes.filter((n) => n.name.trim().toLowerCase() === nodeName.toLowerCase());
+  if (loose.length === 1) return loose[0];
+  return fail(`There's no node named "${nodeName}". Nodes: ${nodeNames(d).join(', ')}.`);
 }
 
 function findEdge(d: AgentDraft, from: string, fn: string): AgentEdge {
@@ -152,6 +161,15 @@ const tools: Record<string, Tool> = {
   delete_node: (d, args) => {
     const node = findNode(d, name(args, 'name'));
     if (node.id === d.initialNodeId) fail(`"${node.name.trim()}" is the start node and can't be deleted. Use set_start_node first.`);
+    // Refuse to leave other steps with edges into nothing. That also stops a batch of deletes,
+    // planned before any result is seen, from taking out a node another path still needs.
+    const incoming = Object.values(d.edges).filter((e) => e.targetId === node.id && e.sourceId !== node.id);
+    if (incoming.length) {
+      const list = incoming.map((e) => `"${e.function.trim()}" from "${d.nodes[e.sourceId]?.name.trim()}"`).join(', ');
+      fail(
+        `"${node.name.trim()}" is still the target of edge ${list}. Retarget or delete ${incoming.length === 1 ? 'that edge' : 'those edges'} first (delete_edge also removes the nodes only that edge led to).`,
+      );
+    }
     const { draft, alsoRemoved } = remove(d, { kind: 'node', id: node.id });
     return { draft, summary: `Deleted node "${node.name.trim()}".${alsoRemoved}` };
   },
@@ -173,6 +191,7 @@ const tools: Record<string, Tool> = {
     return {
       draft: { ...d, edges: { ...d.edges, [edge.id]: edge } },
       summary: `Added edge "${fn}" from "${from}" to "${target.name.trim()}".`,
+      hint: optionsHint(source.name.trim()),
     };
   },
 
@@ -199,7 +218,11 @@ const tools: Record<string, Tool> = {
     const from = name(args, 'from');
     const edge = findEdge(d, from, name(args, 'function'));
     const { draft, alsoRemoved } = remove(d, { kind: 'edge', id: edge.id });
-    return { draft, summary: `Deleted edge "${edge.function.trim()}" from "${from}".${alsoRemoved}` };
+    return {
+      draft,
+      summary: `Deleted edge "${edge.function.trim()}" from "${from}".${alsoRemoved}`,
+      hint: optionsHint(d.nodes[edge.sourceId].name.trim()),
+    };
   },
 
   set_start_node: (d, args) => {
@@ -244,8 +267,8 @@ export function applyTool(d: AgentDraft, toolName: string, args: unknown): { dra
   if (typeof args !== 'object' || args === null || Array.isArray(args))
     return { draft: d, result: { ok: false, error: 'The arguments must be a JSON object.' } };
   try {
-    const { draft, summary } = tool(d, args as Args);
-    return { draft, result: { ok: true, summary } };
+    const { draft, summary, hint } = tool(d, args as Args);
+    return { draft, result: hint ? { ok: true, summary, hint } : { ok: true, summary } };
   } catch (e) {
     if (e instanceof ToolError) return { draft: d, result: { ok: false, error: e.message } };
     throw e;

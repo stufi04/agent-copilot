@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import tools from '../../../backend/copilot/tools.json';
 import branching from '../../../backend/branching_flow.json';
 import { applyTool, TOOL_NAMES } from './copilotOps';
+import { removeNodes } from './graph';
 import { describeAgent } from './describe';
 import { exportAgent } from './export';
 import { importAgentData } from './import';
@@ -94,20 +95,44 @@ describe('copilot tools', () => {
     expect(exportAgent(draft).nodes.length).toBe(exportAgent(before).nodes.length);
   });
 
-  it('deleting a node takes what only it led to, and keeps shared nodes', () => {
-    const cancel = ok(clinic(), 'delete_node', { name: 'find_appointment_to_cancel' });
+  it("won't delete a node an edge still leads to, so nothing is left pointing at nothing", () => {
+    expect(failure(clinic(), 'delete_node', { name: 'offer_times' })).toBe(
+      '"offer_times" is still the target of edge "record_details" from "collect_details", "record_appointment_to_move" from "find_appointment_to_move". Retarget or delete those edges first (delete_edge also removes the nodes only that edge led to).',
+    );
+    expect(failure(clinic(), 'delete_node', { name: 'find_appointment_to_cancel' })).toMatch(/^"find_appointment_to_cancel" is still the target of edge "cancel_appointment" from "greeting"\. Retarget or delete that edge first/);
+  });
+
+  it('removing a step by its edge takes what only it led to, and keeps shared nodes', () => {
+    const cancel = ok(clinic(), 'delete_edge', { from: 'greeting', function: 'cancel_appointment' });
     expect(cancel.summary).toBe(
-      'Deleted node "find_appointment_to_cancel". It also removed "confirm_cancellation", "appointment_cancelled", "appointment_kept", which nothing else led to.',
+      'Deleted edge "cancel_appointment" from "greeting". It also removed "find_appointment_to_cancel", "confirm_cancellation", "appointment_cancelled", "appointment_kept", which nothing else led to.',
     );
-    // greeting's cancel edge now leads nowhere; the editor flags it.
-    expect(describeAgent(cancel.draft).issues).toContain(
-      'Error in edge "cancel_appointment" from "greeting": No target node yet. Hover the edge and click [+] to add one.',
-    );
+    expect(validate(cancel.draft)).toEqual([]);
 
     // offer_times is also reached through collect_details, so it survives.
-    const move = ok(clinic(), 'delete_node', { name: 'find_appointment_to_move' });
-    expect(move.summary).toBe('Deleted node "find_appointment_to_move".');
+    const move = ok(clinic(), 'delete_edge', { from: 'greeting', function: 'reschedule_appointment' });
+    expect(move.summary).toBe('Deleted edge "reschedule_appointment" from "greeting". It also removed "find_appointment_to_move", which nothing else led to.');
     expect(node(describeAgent(move.draft) as unknown as Exported, 'offer_times')).toBeDefined();
+  });
+
+  it("reminds the model (not the user) to update the node's text when an option is added or removed", () => {
+    const { result } = applyTool(clinic(), 'delete_edge', { from: 'greeting', function: 'reschedule_appointment' });
+    expect(result).toMatchObject({
+      ok: true,
+      summary: expect.not.stringContaining('task message'),
+      hint: 'If the task message of "greeting" lists or mentions the options the caller has, update it to match (update_node).',
+    });
+    expect(applyTool(clinic(), 'update_node', { name: 'greeting', task_message: 'Hi.' }).result).not.toHaveProperty('hint');
+  });
+
+  it('deletes a node once nothing leads to it, with what only it led to', () => {
+    // Skip the confirmation: cancelling goes straight to "cancelled", then confirm_cancellation can go.
+    let d = ok(clinic(), 'update_edge', { from: 'find_appointment_to_cancel', function: 'record_appointment_to_cancel', to: 'appointment_cancelled' }).draft;
+    const { draft, summary } = ok(d, 'delete_node', { name: 'confirm_cancellation' });
+    expect(summary).toBe('Deleted node "confirm_cancellation". It also removed "appointment_kept", which nothing else led to.');
+    d = draft;
+    expect(validate(d)).toEqual([]);
+    expect(node(describeAgent(d) as unknown as Exported, 'appointment_cancelled')).toBeDefined();
   });
 
   it('updates, retargets and deletes edges', () => {
@@ -127,6 +152,15 @@ describe('copilot tools', () => {
     const deleted = ok(clinic(), 'delete_edge', { from: 'offer_times', function: 'no_time_works' });
     expect(deleted.summary).toBe('Deleted edge "no_time_works" from "offer_times". It also removed "arrange_callback", which nothing else led to.');
     expect(validate(deleted.draft)).toEqual([]);
+  });
+
+  it('finds a node whose name differs only in case, when just one fits', () => {
+    const { draft } = ok(clinic(), 'update_node', { name: 'Offer_Times', end: false, task_message: 'Offer two times.' });
+    expect(node(exportAgent(draft), 'offer_times')).toMatchObject({ task_messages: [{ content: 'Offer two times.' }] });
+
+    let twins = ok(clinic(), 'add_node', { name: 'Twin', task_message: 'x' }).draft;
+    twins = ok(twins, 'add_node', { name: 'TWIN', task_message: 'y' }).draft;
+    expect(failure(twins, 'update_node', { name: 'twin' })).toMatch(/^There's no node named "twin"/);
   });
 
   it('moves the start node and edits the agent settings', () => {
@@ -192,7 +226,9 @@ describe('describeAgent', () => {
   it('describes an agent mid-edit, which exportAgent can\'t', () => {
     let d = clinic();
     ({ draft: d } = ok(d, 'add_node', { name: 'loose_end', task_message: '' }));
-    ({ draft: d } = ok(d, 'delete_node', { name: 'appointment_kept' })); // keep_appointment now leads nowhere
+    // Delete appointment_kept the way the editor does, leaving keep_appointment leading nowhere.
+    const kept = Object.values(d.nodes).find((n) => n.name === 'appointment_kept')!.id;
+    d = { ...d, ...removeNodes(d, new Set([kept])) };
 
     const described = describeAgent(d);
     expect(described.nodes.at(-1)).toEqual({ name: 'loose_end', task_messages: [{ role: 'developer', content: '' }] });
