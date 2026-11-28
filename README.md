@@ -55,6 +55,7 @@ make ui-e2e-open  # the same tests in Playwright's interactive UI
 - The view zooms out to fit as the graph grows. Use the bottom-left controls to zoom manually.
 - Work is saved in the browser (localStorage). **Export JSON** downloads the agent in the `example_flow.json` format and is enabled once validation passes. Among other checks, every branch must end the call: a node with no outgoing edges must be marked "Ends the call", and no loop may go round forever without a way out to the end.
 - **Speak to agent** (top-left of the canvas, under the title; enabled once the agent is valid) calls the agent on screen with your microphone. Start the voice backend first with `make run` (or `make dev`); the editor talks to it at `http://localhost:7860` (set `VITE_BACKEND_URL` to change that). During the call a panel under the button shows the live transcript, and the node the conversation is in lights up on the graph. Edits made during a call apply to the next one.
+- **Copilot** (the panel along the bottom) is a chat with an LLM about designing your agent. It's served by the same backend (`make dev`), which holds the OpenAI key and streams replies from `POST /api/copilot/chat`; set `COPILOT_MODEL` in `backend/.env` to use a model other than `gpt-4o`. The conversation is kept in the browser. For now it only chats: it can't see or change the graph yet. Drag the panel's top edge to resize it, or click **Copilot** to collapse it.
 - To run an exported agent without the editor, point `AGENT_FLOW` in `bot.py` at the file.
 
 ## Tests & CI
@@ -84,11 +85,13 @@ A final **CI result** job always runs and fails if any suite failed. Branch prot
 | Path | Responsibility |
 | --- | --- |
 | `backend/bot.py` | The voice pipeline (WebRTC + ElevenLabs STT/TTS + OpenAI LLM). Loads an agent JSON via `AgentBuilder` and runs it. No graph logic lives here. |
+| `backend/copilot/` | The copilot chat endpoint (`POST /api/copilot/chat`): streams OpenAI replies to the editor as NDJSON. `bot.py` mounts it on the voice server. |
 | `backend/agent_builder/` | All agent-building code. `schema.py` = the declarative `AgentConfig` / `Node` / `Edge` contract; `builder.py` = `AgentBuilder`, which loads + validates the JSON and compiles it into a Pipecat Flows graph. |
 | `backend/example_flow.json` | The example agent **as data** — a clinic scheduler. The artifact the Phase 2 Composer generates/edits. |
 | `backend/branching_flow.json` | A branching example: the caller's answer picks the edge (book / reschedule / cancel, a slot or "none work", confirm or keep a cancellation). Import it into the editor to try it. |
 | `frontend/src/model/` | Editor state (zustand, persisted), validation, and export to the backend JSON format. |
 | `frontend/src/graph/` | React Flow canvas, node/edge-pill components, and the tree layout. |
 | `frontend/src/panel/` | Right-hand side panel with the node, edge and agent-settings forms. |
+| `frontend/src/copilot/` | The copilot chat panel along the bottom, its store, and the client for the backend's chat endpoint. |
 
 To run a different agent, point `AGENT_FLOW` in `bot.py` at another JSON file, or call it from the editor with **Speak to agent**: the editor sends its agent JSON with the call (`POST /start` with `{"body": {"agent": ...}}`), and the bot runs that instead of `AGENT_FLOW`. While a call runs, the bot tells the editor which node the conversation is in (an RTVI server message `{"type": "node", "node": <name>}`).

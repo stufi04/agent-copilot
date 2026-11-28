@@ -16,6 +16,8 @@
 # While a call runs, the bot sends the editor {"type": "node", "node": <name>}
 # (an RTVI server message) each time the conversation enters a node.
 #
+# The same server also hosts the editor's copilot chat (copilot/, POST /api/copilot/chat).
+#
 
 import os
 from pathlib import Path
@@ -147,6 +149,10 @@ def builder_for(body: object) -> AgentBuilder:
 
 
 if __name__ == "__main__":
-    from pipecat.runner.run import main
+    from pipecat.runner.run import app, main
 
+    import copilot
+
+    # The editor's copilot chat (POST /api/copilot/chat), served alongside the calls.
+    app.include_router(copilot.router)
     main()

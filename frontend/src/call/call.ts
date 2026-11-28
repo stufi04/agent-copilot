@@ -1,11 +1,11 @@
 import { create } from 'zustand';
+import { BACKEND_URL } from '../backend';
 import { addBotSpeech, addUserSpeech, type Line } from './transcript';
 
 // A voice call with the agent on screen, run by the backend (backend/bot.py).
 // The store holds what the UI shows; the actual connection is a CallConnection, which
 // is the Pipecat browser client in the app (pipecatConnection.ts) and a fake in tests.
 
-export const BACKEND_URL: string = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:7860';
 
 export type CallStatus = 'idle' | 'connecting' | 'connected' | 'ended' | 'error';
 

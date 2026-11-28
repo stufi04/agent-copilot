@@ -11,7 +11,9 @@ import { toFlow, type FlowNode } from './toFlow';
 
 const nodeTypes: NodeTypes = { agentNode: AgentNodeCard, edgePill: EdgePill } as NodeTypes;
 // Never zoom past 100% when fitting, so a small graph doesn't render huge.
-const FIT_OPTIONS = { padding: 0.2, maxZoom: 1, duration: 300 };
+// Padding is in px (a bare number is px too, so 0.2 meant none): room at the top for the
+// call button, and at the bottom for the [+] that hangs under the last node.
+const FIT_OPTIONS = { padding: { top: 56, bottom: 48, x: 48 }, maxZoom: 1, duration: 300 };
 
 // Dragging keeps the node -> edge -> node alternation:
 //

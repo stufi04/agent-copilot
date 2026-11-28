@@ -1,32 +1,7 @@
-import { useEffect } from 'react';
 import { useEditor } from './model/store';
+import { isMac } from './useUndoShortcuts';
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = isMac ? '⌘' : 'Ctrl+';
-
-/**
- * ⌘Z / Ctrl+Z undoes, ⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y redoes, everywhere in the editor,
- * including while typing in the side panel, so undo always means the same thing.
- */
-export function useUndoShortcuts() {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-      const key = e.key.toLowerCase();
-      const { undo, redo } = useEditor.getState();
-      if (key === 'z') {
-        e.preventDefault(); // not the text field's own undo
-        if (e.shiftKey) redo();
-        else undo();
-      } else if (key === 'y' && !isMac) {
-        e.preventDefault();
-        redo();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-}
 
 /** A curved arrow; mirrored for redo. */
 function ArrowIcon({ flip }: { flip?: boolean }) {
