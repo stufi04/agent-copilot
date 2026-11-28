@@ -34,6 +34,8 @@ export type AgentNodeData = {
   selected: boolean;
   hasError: boolean;
   drop: DropState;
+  /** The conversation is in this node right now, during a call. */
+  active: boolean;
 };
 export type EdgePillData = {
   label: string;
@@ -51,6 +53,7 @@ export function toFlow(
   selection: Selection,
   errored: Set<Id>,
   drop: { nodeId: Id; state: Exclude<DropState, null> } | null = null,
+  activeNodeId: Id | null = null,
 ): { nodes: FlowNode[]; edges: Edge[] } {
   const isSelected = (kind: 'node' | 'edge', id: Id) =>
     selection?.kind === kind && selection.id === id;
@@ -80,6 +83,7 @@ export function toFlow(
         selected: isSelected('node', n.id),
         hasError: errored.has(n.id),
         drop: drop?.nodeId === n.id ? drop.state : null,
+        active: n.id === activeNodeId,
       },
     });
   }

@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
+import { setConnectionFactory, useCall } from '../call/call';
 import { useEditor } from '../model/store';
 
 // jsdom lacks a few browser APIs React Flow relies on; minimal stand-ins.
@@ -25,6 +26,8 @@ beforeEach(() => {
   localStorage.clear();
   useEditor.getState().reset();
   useEditor.setState({ past: [], future: [] });
+  useCall.setState({ status: 'idle', lines: [], activeNode: null, error: null, agentName: null });
+  setConnectionFactory(null);
 });
 
 afterEach(() => {

@@ -202,3 +202,26 @@ def test_whole_example_flow_can_be_walked_to_the_end():
     assert visited == ["greeting", "collect_details", "offer_times", "confirm"]
     assert node["post_actions"] == [{"type": "end_conversation"}]
     assert flow_manager.state == {"intent": "book", "full_name": "x", "reason": "x", "slot": "Tuesday 10 AM"}
+
+
+def test_on_transition_is_told_the_target_node():
+    builder = AgentBuilder.from_dict(minimal_agent())
+    entered = []
+
+    async def on_transition(name):
+        entered.append(name)
+
+    builder.on_transition = on_transition
+    run_edge(builder, {"name": "Ada"})
+    assert entered == ["done"]
+
+
+def test_bot_runs_the_agent_sent_with_the_call_or_the_default_flow():
+    from bot import builder_for
+
+    assert builder_for({"agent": minimal_agent(name="Sent")}).config.name == "Sent"
+    default = json.loads((BACKEND / "example_flow.json").read_text())["name"]
+    assert builder_for({}).config.name == default
+    assert builder_for(None).config.name == default
+    with pytest.raises(ValueError):
+        builder_for({"agent": minimal_agent(initial_node="nowhere")})

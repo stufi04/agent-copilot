@@ -20,6 +20,8 @@ make install   # uv sync — creates backend/.venv and installs from uv.lock
 make run       # uv run python bot.py
 ```
 
+While working on the backend, use `make dev` instead: it restarts the bot whenever a `.py` file under `backend/` changes (a restart drops any call in progress). Agent changes made in the editor never need a restart, since each call sends the agent on screen.
+
 Open the URL it prints (default `http://localhost:7860/client`), click **Connect**, allow mic access, and talk to the agent. `Ctrl+C` to stop. (`make help` lists all targets.)
 
 Prefer raw `uv`? The same commands without `make`:
@@ -52,7 +54,8 @@ make ui-e2e-open  # the same tests in Playwright's interactive UI
 - **Import JSON** (next to Export) loads an agent file in the backend format, e.g. `backend/example_flow.json`, and replaces the graph with it. Files the editor can't represent are rejected with the reasons; anything dropped on the way in (e.g. `pre_actions`) is listed as a warning. Loops and shared nodes import fine; every node must be reachable from the start node.
 - The view zooms out to fit as the graph grows. Use the bottom-left controls to zoom manually.
 - Work is saved in the browser (localStorage). **Export JSON** downloads the agent in the `example_flow.json` format and is enabled once validation passes. Among other checks, every branch must end the call: a node with no outgoing edges must be marked "Ends the call", and no loop may go round forever without a way out to the end.
-- Run an exported agent by pointing `AGENT_FLOW` in `bot.py` at the file.
+- **Speak to agent** (top-left of the canvas, under the title; enabled once the agent is valid) calls the agent on screen with your microphone. Start the voice backend first with `make run` (or `make dev`); the editor talks to it at `http://localhost:7860` (set `VITE_BACKEND_URL` to change that). During the call a panel under the button shows the live transcript, and the node the conversation is in lights up on the graph. Edits made during a call apply to the next one.
+- To run an exported agent without the editor, point `AGENT_FLOW` in `bot.py` at the file.
 
 ## Tests & CI
 
@@ -85,4 +88,4 @@ A final **CI result** job always runs and fails if any suite failed. Branch prot
 | `frontend/src/graph/` | React Flow canvas, node/edge-pill components, and the tree layout. |
 | `frontend/src/panel/` | Right-hand side panel with the node, edge and agent-settings forms. |
 
-To run a different agent, point `AGENT_FLOW` in `bot.py` at another JSON file.
+To run a different agent, point `AGENT_FLOW` in `bot.py` at another JSON file, or call it from the editor with **Speak to agent**: the editor sends its agent JSON with the call (`POST /start` with `{"body": {"agent": ...}}`), and the bot runs that instead of `AGENT_FLOW`. While a call runs, the bot tells the editor which node the conversation is in (an RTVI server message `{"type": "node", "node": <name>}`).

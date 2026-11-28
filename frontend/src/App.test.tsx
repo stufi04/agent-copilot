@@ -1,8 +1,10 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import newAgent from '../e2e/fixtures/new_agent.json';
 import App from './App';
+import { exportAgent } from './model/export';
+import { fakeConnection } from './test/fakeCall';
 import { buildExampleFlow, buildTree, draft } from './test/helpers';
 
 // The [+] buttons are revealed by CSS :hover, which jsdom doesn't apply. They're
@@ -160,6 +162,8 @@ describe('App', () => {
     expect(centre).toBe(screen.getByRole('toolbar', { name: 'Editor controls' }));
     expect(names(centre)).toEqual(['Undo', 'Redo', 'Reset']);
     expect(names(right)).toEqual(['2 errors, 0 warnings', 'Import JSON', 'Export JSON']);
+    // The call button sits on the canvas, top-left, under the title; the conversation shows below it.
+    expect(document.querySelector('.call-dock')!.firstElementChild).toBe(screen.getByRole('button', { name: 'Speak to agent' }));
   });
 
   it('Agent settings opens the agent form', async () => {
@@ -355,6 +359,61 @@ describe('App', () => {
       expect(graphNode('A')).toBeInTheDocument();
       expect(graphNode('B')).toBeInTheDocument();
       expect(screen.getByLabelText('Name')).toHaveValue('A');
+    });
+  });
+
+  describe('Speak to agent', () => {
+    const speak = () => screen.getByRole('button', { name: 'Speak to agent' });
+    const callPanel = () => screen.queryByRole('region', { name: 'Call' });
+
+    it('is disabled until the agent is valid', () => {
+      setup();
+      expect(speak()).toBeDisabled();
+      act(() => buildExampleFlow());
+      expect(speak()).toBeEnabled();
+    });
+
+    it('calls the agent on screen, shows the transcript and lights up the active node', async () => {
+      buildExampleFlow();
+      const { user } = setup();
+      const fake = fakeConnection();
+
+      await user.click(speak());
+      expect(fake.connectedWith).toEqual([exportAgent(draft())]);
+      expect(within(callPanel()!).getByText('Connecting…')).toBeInTheDocument();
+      await act(async () => fake.ready());
+      expect(within(callPanel()!).getByText('On a call')).toBeInTheDocument();
+
+      act(() => {
+        fake.events.node('greeting');
+        fake.events.botSpeech('Hello, how can I help?');
+        fake.events.userSpeech('I need an appointment', true);
+      });
+      expect(within(callPanel()!).getByText('Hello, how can I help?')).toBeInTheDocument();
+      expect(within(callPanel()!).getByText('I need an appointment')).toBeInTheDocument();
+      expect(graphNode('greeting').closest('.agent-node')).toHaveClass('is-active');
+
+      act(() => fake.events.node('collect_details'));
+      expect(graphNode('greeting').closest('.agent-node')).not.toHaveClass('is-active');
+      expect(graphNode('collect_details').closest('.agent-node')).toHaveClass('is-active');
+
+      await user.click(screen.getByRole('button', { name: 'Hang up' }));
+      expect(fake.disconnects).toBe(1);
+      expect(within(callPanel()!).getByText('Call ended')).toBeInTheDocument();
+      expect(document.querySelector('.agent-node.is-active')).toBeNull();
+      expect(speak()).toBeEnabled(); // ready for another call
+
+      await user.click(screen.getByRole('button', { name: 'Close call panel' }));
+      expect(callPanel()).toBeNull();
+    });
+
+    it('shows why a call could not start', async () => {
+      buildExampleFlow();
+      const { user } = setup();
+      const fake = fakeConnection();
+      await user.click(speak());
+      await act(async () => fake.fail(new TypeError('Failed to fetch')));
+      expect(screen.getByRole('alert')).toHaveTextContent('Couldn\'t reach the voice backend');
     });
   });
 });

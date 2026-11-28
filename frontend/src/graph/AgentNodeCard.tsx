@@ -12,6 +12,7 @@ export const AgentNodeCard = memo(function AgentNodeCard({ id, data }: NodeProps
     data.selected && 'is-selected',
     data.hasError && 'has-error',
     data.drop && `drop-${data.drop}`,
+    data.active && 'is-active',
   ]
     .filter(Boolean)
     .join(' ');
@@ -22,6 +23,7 @@ export const AgentNodeCard = memo(function AgentNodeCard({ id, data }: NodeProps
       <div className="agent-node__badges">
         {data.isStart && <span className="badge badge--start">start</span>}
         {data.isEnd && <span className="badge badge--end">ends call</span>}
+        {data.active && <span className="badge badge--live">live</span>}
       </div>
       <div className="agent-node__name" title={data.name}>
         {data.name}

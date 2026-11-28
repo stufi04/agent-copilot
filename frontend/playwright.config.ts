@@ -21,6 +21,9 @@ export default defineConfig({
     command: `npm run build && npx vite preview --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: false,
+    // Point "Speak to agent" at a port nothing listens on, so a test can never place a
+    // real call (with real API keys) through a voice backend that happens to be running.
+    env: { VITE_BACKEND_URL: 'http://localhost:9' },
     timeout: 120_000,
   },
 });
